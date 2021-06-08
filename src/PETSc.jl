@@ -14,5 +14,7 @@ include("matshell.jl")
 include("ksp.jl")
 include("pc.jl")
 include("snes.jl")
+include("dm.jl")
+include("dmda.jl")
 
 end
