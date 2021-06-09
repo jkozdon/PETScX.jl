@@ -14,13 +14,6 @@ function Base.unsafe_convert(::Type{Ptr{CDM}}, obj::AbstractDM)
 end
 
 """
-    DMSetFromOtions!(da::DM)
-
-see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/DM/DMSetFromOtions.html)
-"""
-function DMSetFromOtions! end
-
-"""
     DMSetUp!(da::DM)
 
 see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/DM/DMSetUp.html)
@@ -33,10 +26,6 @@ function DMSetUp! end
             @chk ccall((:DMDestroy, $libpetsc), PetscErrorCode, (Ptr{CDM},), da)
         da.ptr = C_NULL
         return nothing
-    end
-
-    function DMSetFromOtions!(da::DM{$PetscScalar})
-        @chk ccall((:DMSetFromOptions, $libpetsc), PetscErrorCode, (CDM,), da)
     end
 
     function DMSetUp!(da::DM{$PetscScalar})
