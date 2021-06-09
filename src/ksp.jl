@@ -7,8 +7,7 @@ mutable struct KSP{T} <: Factorization{T}
     ptr::CKSP
     comm::MPI.Comm
     # keep around so that they don't get gc'ed
-    A  # Operator
-    P  # preconditioning operator
+    gc_data::Tuple
     opts::Options{T}
 end
 
@@ -29,7 +28,7 @@ LinearAlgebra.adjoint(ksp) = LinearAlgebra.Adjoint(ksp)
     function KSP{$PetscScalar}(comm::MPI.Comm; kwargs...)
         initialize($PetscScalar)
         opts = Options{$PetscScalar}(kwargs...)
-        ksp = KSP{$PetscScalar}(C_NULL, comm, nothing, nothing, opts)
+        ksp = KSP{$PetscScalar}(C_NULL, comm, (), opts)
         @chk ccall((:KSPCreate, $libpetsc), PetscErrorCode, (MPI.MPI_Comm, Ptr{CKSP}), comm, ksp)
         if comm == MPI.COMM_SELF
             finalizer(destroy, ksp)
@@ -45,8 +44,7 @@ LinearAlgebra.adjoint(ksp) = LinearAlgebra.Adjoint(ksp)
 
     function setoperators!(ksp::KSP{$PetscScalar}, A::AbstractMat{$PetscScalar}, P::AbstractMat{$PetscScalar})
         @chk ccall((:KSPSetOperators, $libpetsc), PetscErrorCode, (CKSP, CMat, CMat), ksp, A, P)
-        ksp.A = A
-        ksp.P = P
+        ksp.gc_data = (ksp.gc_data..., A, P)
         return nothing
     end
 
