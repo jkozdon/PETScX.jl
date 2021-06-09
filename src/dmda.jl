@@ -120,7 +120,11 @@ function DMDAGetGhostCorners end
             ref_points_per_proc,
             da,
         )
-        finalizer(destroy, da)
+        # We can only let the garbage collect finalize when we do not need to
+        # worry about MPI (since garbage collection is asyncronous)
+        if comm == MPI.COMM_SELF
+          finalizer(destroy, da)
+        end
         return da
     end
 
@@ -186,7 +190,11 @@ function DMDAGetGhostCorners end
             ref_points_per_proc_y,
             da,
         )
-        finalizer(destroy, da)
+        # We can only let the garbage collect finalize when we do not need to
+        # worry about MPI (since garbage collection is asyncronous)
+        if comm == MPI.COMM_SELF
+          finalizer(destroy, da)
+        end
         return da
     end
 
@@ -270,7 +278,11 @@ function DMDAGetGhostCorners end
             ref_points_per_proc_z,
             da,
         )
-        finalizer(destroy, da)
+        # We can only let the garbage collect finalize when we do not need to
+        # worry about MPI (since garbage collection is asyncronous)
+        if comm == MPI.COMM_SELF
+          finalizer(destroy, da)
+        end
         return da
     end
 
