@@ -48,6 +48,12 @@ LinearAlgebra.adjoint(ksp) = LinearAlgebra.Adjoint(ksp)
         return nothing
     end
 
+    function KSPSetDM!(ksp::KSP{$PetscScalar}, dm::AbstractDM{$PetscScalar})
+        @chk ccall((:KSPSetDM, $libpetsc), PetscErrorCode, (CKSP, CDM), ksp, dm)
+        ksp.gc_data = (ksp.gc_data..., dm)
+        return nothing
+    end
+
     function settolerances!(ksp::KSP{$PetscScalar}; rtol=PETSC_DEFAULT, atol=PETSC_DEFAULT, divtol=PETSC_DEFAULT, max_it=PETSC_DEFAULT)
         @chk ccall((:KSPSetTolerances, $libpetsc), PetscErrorCode, 
                     (CKSP, $PetscReal, $PetscReal, $PetscReal, $PetscInt),
@@ -128,6 +134,24 @@ Any PETSc options prefixed with `ksp_` and `pc_` can be passed as keywords.
 function KSP(A::AbstractMat{T}, P::AbstractMat{T}=A; kwargs...) where {T}
     ksp = KSP{T}(A.comm; kwargs...)
     setoperators!(ksp, A, P)
+    with(ksp.opts) do
+        setfromoptions!(ksp)
+    end
+    return ksp
+end
+
+"""
+    KSP(da::AbstractDM; options...)
+
+Construct a PETSc Krylov subspace solver from the distributed mesh
+
+Any PETSc options prefixed with `ksp_` and `pc_` can be passed as keywords.
+
+see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/KSP/KSPSetDM.html)
+"""
+function KSP(dm::AbstractDM{T}; kwargs...) where {T}
+    ksp = KSP{T}(dm.comm; kwargs...)
+    KSPSetDM!(ksp, dm)
     with(ksp.opts) do
         setfromoptions!(ksp)
     end
