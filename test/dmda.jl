@@ -41,7 +41,6 @@ PETSc.initialize()
                 PETSc.DMSetUp!(da)
 
                 da_info = PETSc.DMDAGetInfo(da)
-                # local_da_info = PETSc.DMDAGetLocalInfo(da)
                 corners = PETSc.DMDAGetCorners(da)
                 ghost_corners = PETSc.DMDAGetGhostCorners(da)
 
@@ -103,4 +102,215 @@ PETSc.initialize()
         end
     end
 end
+@testset "DMDACreate2D" begin
+    comm = MPI.COMM_WORLD
+    mpirank = MPI.Comm_rank(comm)
+    mpisize = MPI.Comm_size(comm)
+    global_size_x = 100
+    global_size_y = 45
+    for (_, ST, RT, IT) in PETSc.libtypes
+        # Loop over all boundary types and stencil types
+        for stencil_type in instances(PETSc.DMDAStencilType),
+            boundary_type_y in instances(PETSc.DMBoundaryType),
+            boundary_type_x in instances(PETSc.DMBoundaryType)
+
+            # skip unsupported stencils
+            stencil_type == PETSc.DMDA_STENCIL_BOX &&
+                (
+                    boundary_type_x == PETSc.DM_BOUNDARY_MIRROR ||
+                    boundary_type_y == PETSc.DM_BOUNDARY_MIRROR
+                ) &&
+                continue
+
+            @testset "$boundary_type_x, $boundary_type_y, $stencil_type" begin
+                dof_per_node = 4
+                stencil_width = 5
+
+                # Set the points
+                da = PETSc.DMDACreate2d(
+                    ST,
+                    comm,
+                    boundary_type_x,
+                    boundary_type_y,
+                    stencil_type,
+                    global_size_x,
+                    global_size_y,
+                    PETSc.PETSC_DECIDE,
+                    PETSc.PETSC_DECIDE,
+                    dof_per_node,
+                    stencil_width,
+                    nothing,
+                    nothing,
+                )
+                PETSc.DMSetUp!(da)
+
+                da_info = PETSc.DMDAGetInfo(da)
+
+                @test da_info.global_size == [global_size_x, global_size_y, 1]
+                @test da_info.dim == 2
+                @test prod(da_info.procs_per_dim) == mpisize
+                @test da_info.boundary_type ==
+                      [boundary_type_x, boundary_type_y, PETSc.DM_BOUNDARY_NONE]
+                @test da_info.stencil_type == stencil_type
+                @test da_info.stencil_width == stencil_width
+
+                # test refinement
+                da_refine = 2
+                da = PETSc.DMDACreate2d(
+                    ST,
+                    comm,
+                    boundary_type_x,
+                    boundary_type_y,
+                    stencil_type,
+                    global_size_x,
+                    global_size_y,
+                    PETSc.PETSC_DECIDE,
+                    PETSc.PETSC_DECIDE,
+                    dof_per_node,
+                    stencil_width,
+                    nothing,
+                    nothing;
+                    da_refine = da_refine,
+                )
+                PETSc.DMSetUp!(da)
+
+                da_info = PETSc.DMDAGetInfo(da)
+
+                # Compute refined global size
+                ref_global_size_x =
+                    boundary_type_x == PETSc.DM_BOUNDARY_PERIODIC ?
+                    2^da_refine * global_size_x :
+                    2^da_refine * (global_size_x - 1) + 1
+                ref_global_size_y =
+                    boundary_type_y == PETSc.DM_BOUNDARY_PERIODIC ?
+                    2^da_refine * global_size_y :
+                    2^da_refine * (global_size_y - 1) + 1
+
+                @test da_info.global_size ==
+                      [ref_global_size_x, ref_global_size_y, 1]
+                @test prod(da_info.procs_per_dim) == mpisize
+                @test da_info.boundary_type ==
+                      [boundary_type_x, boundary_type_y, PETSc.DM_BOUNDARY_NONE]
+                @test da_info.stencil_type == stencil_type
+                @test da_info.stencil_width == stencil_width
+
+                #TODO: Test with specific distribution of processors and sizes
+            end
+        end
+    end
+end
+@testset "DMDACreate3D" begin
+    comm = MPI.COMM_WORLD
+    mpirank = MPI.Comm_rank(comm)
+    mpisize = MPI.Comm_size(comm)
+    global_size_x = 12
+    global_size_y = 13
+    global_size_z = 14
+    for (_, ST, RT, IT) in PETSc.libtypes
+        # Loop over all boundary types and stencil types
+        for stencil_type in instances(PETSc.DMDAStencilType),
+            boundary_type_z in instances(PETSc.DMBoundaryType),
+            boundary_type_y in instances(PETSc.DMBoundaryType),
+            boundary_type_x in instances(PETSc.DMBoundaryType)
+
+            stencil_type == PETSc.DMDA_STENCIL_BOX &&
+                (
+                    boundary_type_x == PETSc.DM_BOUNDARY_MIRROR ||
+                    boundary_type_y == PETSc.DM_BOUNDARY_MIRROR ||
+                    boundary_type_z == PETSc.DM_BOUNDARY_MIRROR
+                ) &&
+                continue
+
+            @testset "$boundary_type_x, $boundary_type_y, $boundary_type_z, $stencil_type" begin
+                dof_per_node = 4
+                stencil_width = 2
+
+                # Set the points
+                da = PETSc.DMDACreate3d(
+                    ST,
+                    comm,
+                    boundary_type_x,
+                    boundary_type_y,
+                    boundary_type_z,
+                    stencil_type,
+                    global_size_x,
+                    global_size_y,
+                    global_size_z,
+                    PETSc.PETSC_DECIDE,
+                    PETSc.PETSC_DECIDE,
+                    PETSc.PETSC_DECIDE,
+                    dof_per_node,
+                    stencil_width,
+                    nothing,
+                    nothing,
+                    nothing,
+                )
+                PETSc.DMSetUp!(da)
+
+                da_info = PETSc.DMDAGetInfo(da)
+
+                @test da_info.global_size ==
+                      [global_size_x, global_size_y, global_size_z]
+                @test da_info.dim == 3
+                @test prod(da_info.procs_per_dim) == mpisize
+                @test da_info.boundary_type ==
+                      [boundary_type_x, boundary_type_y, boundary_type_z]
+                @test da_info.stencil_type == stencil_type
+                @test da_info.stencil_width == stencil_width
+
+                # test refinement
+                da_refine = 2
+                da = PETSc.DMDACreate3d(
+                    ST,
+                    comm,
+                    boundary_type_x,
+                    boundary_type_y,
+                    boundary_type_z,
+                    stencil_type,
+                    global_size_x,
+                    global_size_y,
+                    global_size_z,
+                    PETSc.PETSC_DECIDE,
+                    PETSc.PETSC_DECIDE,
+                    PETSc.PETSC_DECIDE,
+                    dof_per_node,
+                    stencil_width,
+                    nothing,
+                    nothing,
+                    nothing;
+                    da_refine = da_refine,
+                )
+                PETSc.DMSetUp!(da)
+
+                da_info = PETSc.DMDAGetInfo(da)
+
+                # Compute refined global size
+                ref_global_size_x =
+                    boundary_type_x == PETSc.DM_BOUNDARY_PERIODIC ?
+                    2^da_refine * global_size_x :
+                    2^da_refine * (global_size_x - 1) + 1
+                ref_global_size_y =
+                    boundary_type_y == PETSc.DM_BOUNDARY_PERIODIC ?
+                    2^da_refine * global_size_y :
+                    2^da_refine * (global_size_y - 1) + 1
+                ref_global_size_z =
+                    boundary_type_z == PETSc.DM_BOUNDARY_PERIODIC ?
+                    2^da_refine * global_size_z :
+                    2^da_refine * (global_size_z - 1) + 1
+
+                @test da_info.global_size ==
+                      [ref_global_size_x, ref_global_size_y, ref_global_size_z]
+                @test prod(da_info.procs_per_dim) == mpisize
+                @test da_info.boundary_type ==
+                      [boundary_type_x, boundary_type_y, boundary_type_z]
+                @test da_info.stencil_type == stencil_type
+                @test da_info.stencil_width == stencil_width
+
+                #TODO: Test with specific distribution of processors and sizes
+            end
+        end
+    end
+end
+nothing
+
 nothing

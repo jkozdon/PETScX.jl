@@ -12,6 +12,7 @@ macro chk(expr)
 end
 
 const PETSC_DEFAULT = -2
+const PETSC_DECIDE = PETSC_DETERMINE = -1
 
 
 @enum PetscBool PETSC_FALSE PETSC_TRUE

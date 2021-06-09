@@ -17,7 +17,7 @@ end
     DMDACreate1d(
         ::Type{Real},
         comm::MPI.Comm,
-        boundary_type,
+        boundary_type::DMBoundaryType,
         global_dim,
         dof_per_node,
         stencil_width,
@@ -30,6 +30,30 @@ arguments;
 see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/DMDA/DMDACreate1d.html)
 """
 function DMDACreate1d end
+
+"""
+    DMDACreate2d(
+        ::Type{Real},
+        comm::MPI.Comm,
+        boundary_type_x::DMBoundaryType,
+        boundary_type_y::DMBoundaryType,
+        stencil_type::DMDAStencilType,
+        global_dim_x,
+        global_dim_y,
+        procs_x,
+        procs_y,
+        dof_per_node,
+        stencil_width,
+        points_per_proc_x::Union{Nothing, Vector{Integer}};
+        points_per_proc_y::Union{Nothing, Vector{Integer}};
+        options...
+    )
+
+Creates a 2-D distributed array with the options specified using keyword
+arguments;
+see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/DMDA/DMDACreate2d.html)
+"""
+function DMDACreate2d end
 
 """
     DMDAGetInfo(da::DM)
@@ -61,7 +85,7 @@ function DMDAGetGhostCorners end
     function DMDACreate1d(
         ::Type{$PetscScalar},
         comm::MPI.Comm,
-        boundary_type,
+        boundary_type::DMBoundaryType,
         global_dim,
         dof_per_node,
         stencil_width,
@@ -94,6 +118,156 @@ function DMDAGetGhostCorners end
             dof_per_node,
             stencil_width,
             ref_points_per_proc,
+            da,
+        )
+        finalizer(destroy, da)
+        return da
+    end
+
+    function DMDACreate2d(
+        ::Type{$PetscScalar},
+        comm::MPI.Comm,
+        boundary_type_x::DMBoundaryType,
+        boundary_type_y::DMBoundaryType,
+        stencil_type::DMDAStencilType,
+        global_dim_x,
+        global_dim_y,
+        procs_x,
+        procs_y,
+        dof_per_node,
+        stencil_width,
+        points_per_proc_x::Union{Nothing, Vector{$PetscInt}},
+        points_per_proc_y::Union{Nothing, Vector{$PetscInt}};
+        options...,
+    )
+        opts = Options{$PetscScalar}(options...)
+        ref_points_per_proc_x = if isnothing(points_per_proc_x)
+            C_NULL
+        else
+            @assert length(points_per_proc_x) == procs_x
+            points_per_proc_x
+        end
+        ref_points_per_proc_y = if isnothing(points_per_proc_y)
+            C_NULL
+        else
+            @assert length(points_per_proc_y) == procs_y
+            points_per_proc_y
+        end
+        da = DM{$PetscScalar}(C_NULL, comm, opts)
+        @chk ccall(
+            (:DMDACreate2d, $libpetsc),
+            PetscErrorCode,
+            (
+                MPI.MPI_Comm,
+                DMBoundaryType,
+                DMBoundaryType,
+                DMDAStencilType,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                Ptr{$PetscInt},
+                Ptr{$PetscInt},
+                Ptr{CDM},
+            ),
+            comm,
+            boundary_type_x,
+            boundary_type_y,
+            stencil_type,
+            global_dim_x,
+            global_dim_y,
+            procs_x,
+            procs_y,
+            dof_per_node,
+            stencil_width,
+            ref_points_per_proc_x,
+            ref_points_per_proc_y,
+            da,
+        )
+        finalizer(destroy, da)
+        return da
+    end
+
+    function DMDACreate3d(
+        ::Type{$PetscScalar},
+        comm::MPI.Comm,
+        boundary_type_x::DMBoundaryType,
+        boundary_type_y::DMBoundaryType,
+        boundary_type_z::DMBoundaryType,
+        stencil_type::DMDAStencilType,
+        global_dim_x,
+        global_dim_y,
+        global_dim_z,
+        procs_x,
+        procs_y,
+        procs_z,
+        dof_per_node,
+        stencil_width,
+        points_per_proc_x::Union{Nothing, Vector{$PetscInt}},
+        points_per_proc_y::Union{Nothing, Vector{$PetscInt}},
+        points_per_proc_z::Union{Nothing, Vector{$PetscInt}};
+        options...,
+    )
+        opts = Options{$PetscScalar}(options...)
+        ref_points_per_proc_x = if isnothing(points_per_proc_x)
+            C_NULL
+        else
+            @assert length(points_per_proc_x) == procs_x
+            points_per_proc_x
+        end
+        ref_points_per_proc_y = if isnothing(points_per_proc_y)
+            C_NULL
+        else
+            @assert length(points_per_proc_y) == procs_y
+            points_per_proc_y
+        end
+        ref_points_per_proc_z = if isnothing(points_per_proc_z)
+            C_NULL
+        else
+            @assert length(points_per_proc_z) == procs_z
+            points_per_proc_z
+        end
+        da = DM{$PetscScalar}(C_NULL, comm, opts)
+        @chk ccall(
+            (:DMDACreate3d, $libpetsc),
+            PetscErrorCode,
+            (
+                MPI.MPI_Comm,
+                DMBoundaryType,
+                DMBoundaryType,
+                DMBoundaryType,
+                DMDAStencilType,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                Ptr{$PetscInt},
+                Ptr{$PetscInt},
+                Ptr{$PetscInt},
+                Ptr{CDM},
+            ),
+            comm,
+            boundary_type_x,
+            boundary_type_y,
+            boundary_type_z,
+            stencil_type,
+            global_dim_x,
+            global_dim_y,
+            global_dim_z,
+            procs_x,
+            procs_y,
+            procs_z,
+            dof_per_node,
+            stencil_width,
+            ref_points_per_proc_x,
+            ref_points_per_proc_y,
+            ref_points_per_proc_z,
             da,
         )
         finalizer(destroy, da)
