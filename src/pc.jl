@@ -2,7 +2,6 @@
 const CPC = Ptr{Cvoid}
 const CPCType = Cstring
 
-
 mutable struct PC{T}
     ptr::Ptr{Cvoid}
     comm::MPI.Comm

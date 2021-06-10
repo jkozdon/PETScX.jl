@@ -3,12 +3,17 @@ const CKSP = Ptr{Cvoid}
 const CKSPType = Cstring
 
 
-mutable struct KSP{T} <: Factorization{T}
-    ptr::CKSP
+Base.@kwdef mutable struct KSP{T} <: Factorization{T}
+    ptr::CKSP = C_NULL
     comm::MPI.Comm
-    # keep around so that they don't get gc'ed
-    gc_data::Tuple
     opts::Options{T}
+    # Stuff to keep around so that they don't get gc'ed
+    A = nothing
+    P = nothing
+    dm = nothing
+    # Function pointers
+    ComputeRHS! = nothing
+    ComputeOperators! = nothing
 end
 
 scalartype(::KSP{T}) where {T} = T
@@ -23,13 +28,57 @@ Base.eltype(::KSP{T}) where {T} = T
 LinearAlgebra.transpose(ksp) = LinearAlgebra.Transpose(ksp)
 LinearAlgebra.adjoint(ksp) = LinearAlgebra.Adjoint(ksp)
 
+"""
+    KSPSetComputeRHS!(
+        ksp::KSP{Number},
+        ComputeRHS!,
+        ctx = C_NULL,
+    )
+
+Set the right-hand side function `ComputeRHS!` for the `ksp` using the user
+`ctx`. `ComputeRHS!` should be callable with three arguments of type
+`(::KSP{Number}, ::Vec, ::Ptr)`;
+see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/KSP/KSPSetComputeRHS.html)
+"""
+function KSPSetComputeRHS! end
+
+"""
+    struct Fn_KSPComputeRHS{T} end
+
+Type used to wrap `ComputeRHS!` functions in KSP
+"""
+struct Fn_KSPComputeRHS{T} end
+
+"""
+    KSPSetComputeOperators!(
+        ksp::KSP{Number},
+        ComputeOperators!,
+        ctx = C_NULL,
+    )
+
+Set the linear operators function `ComputeOperators!` for the `ksp` using the
+user `ctx`. `ComputeOperators!` should be callable with four arguments of type
+`(::KSP{Number}, ::Mat, ::Mat, ::Ptr)`;
+see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/KSP/KSPSetComputeOperators.html)
+"""
+function KSPSetComputeOperators! end
+
+"""
+    struct Fn_KSPComputeOperators{T} end
+
+Type used to wrap `ComputeOperators!` functions in KSP
+"""
+struct Fn_KSPComputeOperators{T} end
+
 @for_libpetsc begin
 
     function KSP{$PetscScalar}(comm::MPI.Comm; kwargs...)
         initialize($PetscScalar)
         opts = Options{$PetscScalar}(kwargs...)
-        ksp = KSP{$PetscScalar}(C_NULL, comm, (), opts)
-        @chk ccall((:KSPCreate, $libpetsc), PetscErrorCode, (MPI.MPI_Comm, Ptr{CKSP}), comm, ksp)
+        ksp = KSP{$PetscScalar}(comm=comm, opts=opts)
+        with(ksp.opts) do
+          @chk ccall((:KSPCreate, $libpetsc), PetscErrorCode, (MPI.MPI_Comm, Ptr{CKSP}), comm, ksp)
+        end
         if comm == MPI.COMM_SELF
             finalizer(destroy, ksp)
         end
@@ -44,13 +93,74 @@ LinearAlgebra.adjoint(ksp) = LinearAlgebra.Adjoint(ksp)
 
     function setoperators!(ksp::KSP{$PetscScalar}, A::AbstractMat{$PetscScalar}, P::AbstractMat{$PetscScalar})
         @chk ccall((:KSPSetOperators, $libpetsc), PetscErrorCode, (CKSP, CMat, CMat), ksp, A, P)
-        ksp.gc_data = (ksp.gc_data..., A, P)
+        ksp.A = A
+        ksp.P = P
         return nothing
     end
 
+    function (::Fn_KSPComputeRHS{$PetscScalar})(
+        ::CKSP,
+        cb::CVec,
+        ksp_ptr::Ptr{Cvoid}
+       )::$PetscInt
+        ksp = unsafe_pointer_to_objref(ksp_ptr)
+        b = Vec{$PetscScalar}(cb)
+        ierr = ksp.ComputeRHS!(ksp, b)
+        return $PetscInt(ierr)
+    end
+
+    function KSPSetComputeRHS!(
+        ksp::KSP{$PetscScalar},
+        ComputeRHS!
+    )
+        ptr_ksp = pointer_from_objref(ksp)
+        fptr = @cfunction(Fn_KSPComputeRHS{$PetscScalar}(),
+                          $PetscInt,
+                          (CKSP, CVec, Ptr{Cvoid}))
+        with(ksp.opts) do
+            @chk ccall((:KSPSetComputeRHS, $libpetsc), PetscErrorCode,
+                (CKSP, Ptr{Cvoid}, Ptr{Cvoid}),
+                ksp, fptr, ptr_ksp)
+        end
+        ksp.ComputeRHS! = ComputeRHS!
+        return ksp
+    end
+
+    function (::Fn_KSPComputeOperators{$PetscScalar})(
+        ::CKSP,
+        cA::CMat,
+        cP::CMat,
+        ksp_ptr::Ptr{Cvoid}
+       )::$PetscInt
+        ksp = unsafe_pointer_to_objref(ksp_ptr)
+        A = Mat{$PetscScalar}(cA)
+        P = Mat{$PetscScalar}(cP)
+        ierr = ksp.ComputeOperators!(ksp, A, P)
+        return $PetscInt(ierr)
+    end
+
+    function KSPSetComputeOperators!(
+        ksp::KSP{$PetscScalar},
+        ComputeOperators!
+    )
+        ptr_ksp = pointer_from_objref(ksp)
+        fptr = @cfunction(Fn_KSPComputeOperators{$PetscScalar}(),
+                          $PetscInt,
+                          (CKSP, CMat, CMat, Ptr{Cvoid}))
+        with(ksp.opts) do
+            @chk ccall((:KSPSetComputeOperators, $libpetsc), PetscErrorCode,
+                (CKSP, Ptr{Cvoid}, Ptr{Cvoid}),
+                ksp, fptr, ptr_ksp)
+        end
+        ksp.ComputeOperators! = ComputeOperators!
+        return ksp
+    end
+
     function KSPSetDM!(ksp::KSP{$PetscScalar}, dm::AbstractDM{$PetscScalar})
-        @chk ccall((:KSPSetDM, $libpetsc), PetscErrorCode, (CKSP, CDM), ksp, dm)
-        ksp.gc_data = (ksp.gc_data..., dm)
+        with(ksp.opts) do
+            @chk ccall((:KSPSetDM, $libpetsc), PetscErrorCode, (CKSP, CDM), ksp, dm)
+        end
+        ksp.dm = dm
         return nothing
     end
 
@@ -62,7 +172,9 @@ LinearAlgebra.adjoint(ksp) = LinearAlgebra.Adjoint(ksp)
     end
 
     function setfromoptions!(ksp::KSP{$PetscScalar})
-        @chk ccall((:KSPSetFromOptions, $libpetsc), PetscErrorCode, (CKSP,), ksp)
+        with(ksp.opts) do
+            @chk ccall((:KSPSetFromOptions, $libpetsc), PetscErrorCode, (CKSP,), ksp)
+        end
     end
 
     function gettype(ksp::KSP{$PetscScalar})
@@ -100,6 +212,14 @@ LinearAlgebra.adjoint(ksp) = LinearAlgebra.Adjoint(ksp)
         return x
     end
 
+    function solve!(ksp::KSP{$PetscScalar})
+        with(ksp.opts) do
+            @chk ccall((:KSPSolve, $libpetsc), PetscErrorCode, 
+            (CKSP, CVec, CVec), ksp, C_NULL, C_NULL)
+        end
+        return nothing
+    end
+
     function solve!(x::AbstractVec{$PetscScalar}, tksp::Transpose{T,K}, b::AbstractVec{$PetscScalar}) where {T,K <: KSP{$PetscScalar}}
         ksp = parent(tksp)
         with(ksp.opts) do
@@ -134,9 +254,7 @@ Any PETSc options prefixed with `ksp_` and `pc_` can be passed as keywords.
 function KSP(A::AbstractMat{T}, P::AbstractMat{T}=A; kwargs...) where {T}
     ksp = KSP{T}(A.comm; kwargs...)
     setoperators!(ksp, A, P)
-    with(ksp.opts) do
-        setfromoptions!(ksp)
-    end
+    setfromoptions!(ksp)
     return ksp
 end
 
@@ -152,9 +270,7 @@ see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/
 function KSP(dm::AbstractDM{T}; kwargs...) where {T}
     ksp = KSP{T}(dm.comm; kwargs...)
     KSPSetDM!(ksp, dm)
-    with(ksp.opts) do
-        setfromoptions!(ksp)
-    end
+    setfromoptions!(ksp)
     return ksp
 end
 

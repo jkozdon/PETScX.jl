@@ -36,7 +36,8 @@ function DMSetUp! end
                 (CDM,),
                 da,
             )
+
+            @chk ccall((:DMSetUp, $libpetsc), PetscErrorCode, (CDM,), da)
         end
-        @chk ccall((:DMSetUp, $libpetsc), PetscErrorCode, (CDM,), da)
     end
 end
