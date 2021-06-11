@@ -117,15 +117,9 @@ function main(PetscScalar; comm = MPI.COMM_WORLD, options...)
     stencil_width = 1
     points_per_proc = (nothing, nothing)
 
-    opts = (ksp_monitor = true,
-            ksp_view = true,
-            da_grid_x = 100,
-            da_grid_y = 100,
-            pc_type="mg",
-            pc_mg_levels=1,
-            mg_levels_0_pc_type="ilu",
-            mg_levels_0_pc_factor_levels=1,
-           )
+    opts =
+        isinteractive() ? (ksp_monitor = nothing, ksp_view = nothing) :
+        PETSc.parse_options(ARGS)
 
     da = PETSc.DMDACreate2d(
         PetscScalar,
