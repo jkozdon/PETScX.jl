@@ -5,7 +5,7 @@ const CKSPType = Cstring
 
 Base.@kwdef mutable struct KSP{T} <: Factorization{T}
     ptr::CKSP = C_NULL
-    comm::MPI.Comm
+    _comm::MPI.Comm
     opts::Options{T}
     # Stuff to keep around so that they don't get gc'ed
     A = nothing
@@ -75,7 +75,7 @@ struct Fn_KSPComputeOperators{T} end
     function KSP{$PetscScalar}(comm::MPI.Comm; kwargs...)
         initialize($PetscScalar)
         opts = Options{$PetscScalar}(kwargs...)
-        ksp = KSP{$PetscScalar}(comm=comm, opts=opts)
+        ksp = KSP{$PetscScalar}(_comm=comm, opts=opts)
         with(ksp.opts) do
           @chk ccall((:KSPCreate, $libpetsc), PetscErrorCode, (MPI.MPI_Comm, Ptr{CKSP}), comm, ksp)
         end
@@ -190,7 +190,7 @@ struct Fn_KSPComputeOperators{T} end
         return r_its[]
     end
 
-    function view(ksp::KSP{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(ksp.comm))
+    function view(ksp::KSP{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(ksp._comm))
         @chk ccall((:KSPView, $libpetsc), PetscErrorCode, 
                     (CKSP, CPetscViewer),
                 ksp, viewer);
@@ -252,7 +252,7 @@ Construct a PETSc Krylov subspace solver.
 Any PETSc options prefixed with `ksp_` and `pc_` can be passed as keywords.
 """
 function KSP(A::AbstractMat{T}, P::AbstractMat{T}=A; kwargs...) where {T}
-    ksp = KSP{T}(A.comm; kwargs...)
+    ksp = KSP{T}(PetscObjectGetComm(A); kwargs...)
     setoperators!(ksp, A, P)
     setfromoptions!(ksp)
     return ksp
@@ -268,7 +268,7 @@ Any PETSc options prefixed with `ksp_` and `pc_` can be passed as keywords.
 see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/KSP/KSPSetDM.html)
 """
 function KSP(dm::AbstractDM{T}; kwargs...) where {T}
-    ksp = KSP{T}(dm.comm; kwargs...)
+    ksp = KSP{T}(PetscObjectGetComm(dm); kwargs...)
     KSPSetDM!(ksp, dm)
     setfromoptions!(ksp)
     return ksp

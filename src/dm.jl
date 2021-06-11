@@ -3,7 +3,7 @@ const CDM = Ptr{Cvoid}
 abstract type AbstractDM{T} end
 mutable struct DM{T} <: AbstractDM{T}
     ptr::CDM
-    comm::MPI.Comm
+    _comm::MPI.Comm
     opts::Options{T}
 end
 # allows us to pass XXDM objects directly into CDM ccall signatures

@@ -23,7 +23,7 @@ Memory allocation is handled by PETSc.
 """
 mutable struct MatSeqAIJ{T} <: AbstractMat{T}
     ptr::CMat
-    comm::MPI.Comm
+    _comm::MPI.Comm
 end
 
 
@@ -45,7 +45,7 @@ PETSc dense array. This wraps a Julia `Matrix{T}` object.
 """
 mutable struct MatSeqDense{T} <: AbstractMat{T}
     ptr::CMat
-    comm::MPI.Comm
+    _comm::MPI.Comm
     array::Matrix{T}
 end
 
@@ -108,7 +108,7 @@ and [MatNullSpaceCreate](https://www.mcs.anl.gov/petsc/petsc-current/docs/manual
 """
 mutable struct MatNullSpace{T}
     ptr::CMatNullSpace
-    comm::MPI.Comm
+    _comm::MPI.Comm
 end
 # allows us to pass XXMat objects directly into CMat ccall signatures
 Base.cconvert(::Type{CMatNullSpace}, obj::MatNullSpace) = obj.ptr
@@ -281,7 +281,7 @@ function MatSetValuesStencil! end
         @chk ccall((:MatAssemblyEnd, $libpetsc), PetscErrorCode, (CMat, MatAssemblyType), M, t)
         return nothing
     end
-    function view(mat::AbstractMat{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(mat.comm))
+    function view(mat::AbstractMat{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(PetscObjectGetComm(mat)))
         @chk ccall((:MatView, $libpetsc), PetscErrorCode, 
                     (CMat, CPetscViewer),
                 mat, viewer);

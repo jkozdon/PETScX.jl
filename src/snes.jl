@@ -5,7 +5,7 @@ const CSNESType = Cstring
 
 mutable struct SNES{T}
     ptr::CSNES
-    comm::MPI.Comm
+    _comm::MPI.Comm
     opts::Options{T}
     fn!
     fn_vec
@@ -104,7 +104,7 @@ end
         return unsafe_string(t_r[])
     end
 
-    function view(snes::SNES{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(snes.comm))
+    function view(snes::SNES{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(PetscObjectGetComm(snes)))
         @chk ccall((:SNESView, $libpetsc), PetscErrorCode,
                     (CSNES, CPetscViewer),
                 snes, viewer);

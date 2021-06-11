@@ -4,7 +4,7 @@ const CPCType = Cstring
 
 mutable struct PC{T}
     ptr::Ptr{Cvoid}
-    comm::MPI.Comm
+    _comm::MPI.Comm
 end
 
 Base.cconvert(::Type{CPC}, obj::PC) = obj.ptr
@@ -23,7 +23,8 @@ scalartype(::PC{T}) where {T} = T
     end
 
     function PC(ksp::KSP{$PetscScalar})
-        pc = PC{$PetscScalar}(C_NULL, ksp.comm)
+        comm = PetscObjectGetComm(ksp)
+        pc = PC{$PetscScalar}(C_NULL, comm)
         @chk ccall((:KSPGetPC, $libpetsc), PetscErrorCode, (CKSP, Ptr{CPC}), ksp, pc)
         incref(pc) # need to manually increment the reference counter
         finalizer(destroy, pc)
@@ -52,7 +53,7 @@ scalartype(::PC{T}) where {T} = T
         return unsafe_string(t_r[])
     end
 
-    function view(pc::PC{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(pc.comm))
+    function view(pc::PC{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(PetscObjectGetComm(pc)))
         @chk ccall((:PCView, $libpetsc), PetscErrorCode,
                     (CPC, CPetscViewer),
                 pc, viewer);
