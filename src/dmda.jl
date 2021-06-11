@@ -56,7 +56,7 @@ see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/
 function DMDACreate2d end
 
 """
-    DMDAGetInfo(da::DM)
+    DMDAGetInfo(da::AbstractDM)
 
 Get the info associated with the distributed array `da`;
 see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/DMDA/DMDAGetInfo.html)
@@ -64,7 +64,7 @@ see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/
 function DMDAGetInfo end
 
 """
-    DMDAGetCorners(da::DM)
+    DMDAGetCorners(da::AbstractDM)
 
 Returns a `NamedTuple` with the global indices (excluding ghost points) of the
 `lower` and `upper` corners as well as the `size`;
@@ -73,7 +73,7 @@ see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/
 function DMDAGetCorners end
 
 """
-    DMDAGetGhostCorners(da::DM)
+    DMDAGetGhostCorners(da::AbstractDM)
 
 Returns a `NamedTuple` with the global indices (including ghost points) of the
 `lower` and `upper` corners as well as the `size`;
@@ -292,7 +292,7 @@ function DMDAGetGhostCorners end
         return da
     end
 
-    function DMDAGetInfo(da::DM{$PetscScalar})
+    function DMDAGetInfo(da::AbstractDM{$PetscScalar})
         dim = [$PetscInt(0)]
         glo_size = [$PetscInt(0), $PetscInt(0), $PetscInt(0)]
         procs_per_dim = [$PetscInt(0), $PetscInt(0), $PetscInt(0)]
@@ -345,7 +345,7 @@ function DMDAGetGhostCorners end
         )
     end
 
-    function DMDAGetCorners(da::DM{$PetscScalar})
+    function DMDAGetCorners(da::AbstractDM{$PetscScalar})
         info = DMDALocalInfo{$PetscInt}()
         corners = [$PetscInt(0), $PetscInt(0), $PetscInt(0)]
         local_size = [$PetscInt(0), $PetscInt(0), $PetscInt(0)]
@@ -377,7 +377,7 @@ function DMDAGetGhostCorners end
         )
     end
 
-    function DMDAGetGhostCorners(da::DM{$PetscScalar})
+    function DMDAGetGhostCorners(da::AbstractDM{$PetscScalar})
         info = DMDALocalInfo{$PetscInt}()
         corners = [$PetscInt(0), $PetscInt(0), $PetscInt(0)]
         local_size = [$PetscInt(0), $PetscInt(0), $PetscInt(0)]

@@ -1,6 +1,9 @@
 const CDM = Ptr{Cvoid}
 
 abstract type AbstractDM{T} end
+mutable struct _DM{T} <: AbstractDM{T}
+    ptr::CDM
+end
 mutable struct DM{T} <: AbstractDM{T}
     ptr::CDM
     _comm::MPI.Comm

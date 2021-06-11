@@ -2,24 +2,29 @@
 const CKSP = Ptr{Cvoid}
 const CKSPType = Cstring
 
+abstract type AbstractKSP{T} <: AbstractMatrix{T} end
 
-Base.@kwdef mutable struct KSP{T} <: Factorization{T}
+Base.@kwdef mutable struct KSP{T} <: AbstractKSP{T}
     ptr::CKSP = C_NULL
     _comm::MPI.Comm
     opts::Options{T}
     # Stuff to keep around so that they don't get gc'ed
-    A = nothing
-    P = nothing
-    dm = nothing
+    _A = nothing
+    _P = nothing
+    _dm = nothing
     # Function pointers
     ComputeRHS! = nothing
     ComputeOperators! = nothing
 end
 
+struct WrappedKSP{T} <: AbstractKSP{T}
+    ptr::CKSP
+end
+
 scalartype(::KSP{T}) where {T} = T
 
 # allows us to pass XXMat objects directly into CMat ccall signatures
-Base.cconvert(::Type{CKSP}, obj::KSP) = obj.ptr
+Base.cconvert(::Type{CKSP}, obj::AbstractKSP) = obj.ptr
 # allows us to pass XXMat objects directly into Ptr{CMat} ccall signatures
 Base.unsafe_convert(::Type{Ptr{CKSP}}, obj::KSP) =
     convert(Ptr{CKSP}, pointer_from_objref(obj))
@@ -93,19 +98,20 @@ struct Fn_KSPComputeOperators{T} end
 
     function setoperators!(ksp::KSP{$PetscScalar}, A::AbstractMat{$PetscScalar}, P::AbstractMat{$PetscScalar})
         @chk ccall((:KSPSetOperators, $libpetsc), PetscErrorCode, (CKSP, CMat, CMat), ksp, A, P)
-        ksp.A = A
-        ksp.P = P
+        ksp._A = A
+        ksp._P = P
         return nothing
     end
 
     function (::Fn_KSPComputeRHS{$PetscScalar})(
-        ::CKSP,
+        new_ksp_ptr::CKSP,
         cb::CVec,
         ksp_ptr::Ptr{Cvoid}
        )::$PetscInt
         ksp = unsafe_pointer_to_objref(ksp_ptr)
+        new_ksp = WrappedKSP{$PetscScalar}(new_ksp_ptr)
         b = Vec{$PetscScalar}(cb)
-        ierr = ksp.ComputeRHS!(ksp, b)
+        ierr = ksp.ComputeRHS!(new_ksp, b)
         return $PetscInt(ierr)
     end
 
@@ -127,15 +133,16 @@ struct Fn_KSPComputeOperators{T} end
     end
 
     function (::Fn_KSPComputeOperators{$PetscScalar})(
-        ::CKSP,
+        new_ksp_ptr::CKSP,
         cA::CMat,
         cP::CMat,
         ksp_ptr::Ptr{Cvoid}
        )::$PetscInt
         ksp = unsafe_pointer_to_objref(ksp_ptr)
+        new_ksp = WrappedKSP{$PetscScalar}(new_ksp_ptr)
         A = Mat{$PetscScalar}(cA)
         P = Mat{$PetscScalar}(cP)
-        ierr = ksp.ComputeOperators!(ksp, A, P)
+        ierr = ksp.ComputeOperators!(new_ksp, A, P)
         return $PetscInt(ierr)
     end
 
@@ -160,8 +167,21 @@ struct Fn_KSPComputeOperators{T} end
         with(ksp.opts) do
             @chk ccall((:KSPSetDM, $libpetsc), PetscErrorCode, (CKSP, CDM), ksp, dm)
         end
-        ksp.dm = dm
+        ksp._dm = dm
         return nothing
+    end
+
+    function KSPGetDM(ksp::AbstractKSP{$PetscScalar})
+        t_dm = Ref{CDM}()
+        @chk ccall(
+            (:KSPGetDM, $libpetsc),
+            PetscErrorCode,
+            (CKSP, Ptr{CDM}),
+            ksp,
+            t_dm,
+        )
+        dm = _DM{$PetscScalar}(t_dm[])
+        return dm
     end
 
     function settolerances!(ksp::KSP{$PetscScalar}; rtol=PETSC_DEFAULT, atol=PETSC_DEFAULT, divtol=PETSC_DEFAULT, max_it=PETSC_DEFAULT)

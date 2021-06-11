@@ -7,9 +7,11 @@ PETSc.initialize()
 #  Δu = -cos(π * x) * cos(π * y)
 #
 # with zeros Neumann boundary conditions
-function rhs!(ksp::PETSc.KSP{PetscScalar}, b_vec::PETSc.AbstractVec{PetscScalar}) where {PetscScalar}
-    corners = PETSc.DMDAGetCorners(ksp.dm)
-    global_size = PETSc.DMDAGetInfo(ksp.dm).global_size[1:2]
+function rhs!(ksp::PETSc.AbstractKSP{PetscScalar}, b_vec::PETSc.AbstractVec{PetscScalar}) where {PetscScalar}
+    dm = PETSc.KSPGetDM(ksp)
+    comm = PETSc.PetscObjectGetComm(ksp)
+    corners = PETSc.DMDAGetCorners(dm)
+    global_size = PETSc.DMDAGetInfo(dm).global_size[1:2]
 
     # Grid spacing in each direction
     h = PetscScalar(1) ./ global_size
@@ -33,7 +35,7 @@ function rhs!(ksp::PETSc.KSP{PetscScalar}, b_vec::PETSc.AbstractVec{PetscScalar}
 
     # Hack to remove constant from the vector since we are using all Neumann
     # boundary conditions
-    nullspace = PETSc.MatNullSpace{PetscScalar}(ksp.comm, PETSc.PETSC_TRUE)
+    nullspace = PETSc.MatNullSpace{PetscScalar}(comm, PETSc.PETSC_TRUE)
     PETSc.MatNullSpaceRemove!(nullspace, b_vec)
     PETSc.destroy(nullspace)
 
@@ -42,14 +44,15 @@ function rhs!(ksp::PETSc.KSP{PetscScalar}, b_vec::PETSc.AbstractVec{PetscScalar}
 end
 
 function jacobian!(
-    ksp::PETSc.KSP{PetscScalar},
+    ksp::PETSc.AbstractKSP{PetscScalar},
     J::PETSc.AbstractMat{PetscScalar},
     jac::PETSc.AbstractMat{PetscScalar},
 ) where {PetscScalar}
-    corners = PETSc.DMDAGetCorners(ksp.dm)
+    dm = PETSc.KSPGetDM(ksp)
+    corners = PETSc.DMDAGetCorners(dm)
     PetscInt = eltype(corners.size)
 
-    global_size = PETSc.DMDAGetInfo(ksp.dm).global_size[1:2]
+    global_size = PETSc.DMDAGetInfo(dm).global_size[1:2]
 
     # Grid spacing in each direction
     h = PetscScalar(1) ./ global_size
@@ -65,11 +68,6 @@ function jacobian!(
             row[1] = Sten(i = i, j = j)
             num = 1
             fill!(val, 0)
-            if j > 1
-                val[num] = -h[1] / h[2]
-                col[num] = Sten(i = i, j = j - 1)
-                num += 1
-            end
             if i > 1
                 val[num] = -h[2] / h[1]
                 col[num] = Sten(i = i - 1, j = j)
@@ -78,6 +76,11 @@ function jacobian!(
             if i < global_size[1]
                 val[num] = -h[2] / h[1]
                 col[num] = Sten(i = i + 1, j = j)
+                num += 1
+            end
+            if j > 1
+                val[num] = -h[1] / h[2]
+                col[num] = Sten(i = i, j = j - 1)
                 num += 1
             end
             if j < global_size[2]
@@ -102,7 +105,8 @@ function jacobian!(
     PETSc.assemblyend(jac)
 
     # Since we have all Neumann there is constant nullspace
-    nullspace = PETSc.MatNullSpace{PetscScalar}(ksp.comm, PETSc.PETSC_TRUE)
+    comm = PETSc.PetscObjectGetComm(ksp)
+    nullspace = PETSc.MatNullSpace{PetscScalar}(comm, PETSc.PETSC_TRUE)
     PETSc.MatSetNullSpace!(J, nullspace)
     PETSc.destroy(nullspace)
     return 0
