@@ -1,7 +1,7 @@
-# PETSc
+# PETScX
 
-[![Build Status](https://github.com/jkozdon/PETSc.jl/workflows/CI/badge.svg)](https://github.com/jkozdon/PETSc.jl/actions/workflows/ci.yml)
-[![codecov.io](http://codecov.io/github/JuliaParallel/PETSc.jl/coverage.svg?branch=master)](http://codecov.io/github/JuliaParallel/PETSc.jl?branch=master)
+[![Build Status](https://github.com/jkozdon/PETScX.jl/workflows/CI/badge.svg)](https://github.com/jkozdon/PETScX.jl/actions/workflows/ci.yml)
+[![codecov.io](http://codecov.io/github/jkozdon/PETScX.jl/coverage.svg?branch=master)](http://codecov.io/github/jkozdon/PETScX.jl?branch=master)
 
 This package provides a low level interface for
 [PETSc](https://www.mcs.anl.gov/petsc/)
@@ -11,26 +11,37 @@ This package provides a low level interface for
 
 This package can be added with the julia command:
 ```julia
-]add https://github.com/JuliaParallel/PETSc.jl
+]add https://github.com/jkozdon/PETScX.jl
 ```
 The installation can be tested with
 ```julia
-]test PETSc
+]test PETScX
 ```
 
 ## BinaryBuilder Version
 
 The package requires the uses a pre-build binary of
-[`PETSc`](https://github.com/JuliaBinaryWrappers/PETSc_jll.jl) along with a
+[`PETSc_jll`](https://github.com/JuliaBinaryWrappers/PETSc_jll.jl) along with a
 default installation of `MPI.jl`; use of system install MPI and PETSc is not
 currently supported. Not that the distributed version of PETSc is using real,
 `Float64` numbers; build details can be found
 [here](https://github.com/JuliaPackaging/Yggdrasil/blob/master/P/PETSc/build_tarballs.jl)
 
 ## System Builds
+
 If you want to use the package with custom builds of the PETSc library, this can
 be done by specifying the environment variable `JULIA_PETSC_LIBRARY`. This is a
 colon separated list of paths to custom builds of PETSc; the reason for using
 multiple builds is to enable single, double, and complex numbers in the same
 julia session. These should be built against the same version of MPI as used
 with `MPI.jl`
+
+## Historical Notes
+
+This package is an experimental(?) form of
+[`PETSc.jl`](https://github.com/JuliaParallel/PETSc.jl) which (currently) is
+pretty stale.
+
+The [`PETSc_jll`](https://github.com/JuliaBinaryWrappers/PETSc_jll.jl) where
+originally created for [`GridapPETSc.jl`](https://github.com/gridap/GridapPETSc.jl)
+which are PETSc wrappers for [`Gridap.jl`](https://github.com/gridap/Gridap.jl).
