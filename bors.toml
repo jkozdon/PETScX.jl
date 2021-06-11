@@ -1,0 +1,10 @@
+ status = [
+  "ci Julia 1.6 - ubuntu-latest",
+  "ci Julia 1.6 - macOS-latest",
+  "ci Julia nightly - ubuntu-latest",
+  "ci Julia nightly - macOS-latest",
+  "coverage",
+]
+delete_merged_branches = true
+timeout_sec = 10800
+block_labels = [ "do-not-merge-yet" ]
