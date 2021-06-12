@@ -1,7 +1,8 @@
 # PETScX
 
-[![Build Status](https://github.com/jkozdon/PETScX.jl/workflows/CI/badge.svg)](https://github.com/jkozdon/PETScX.jl/actions/workflows/ci.yml)
-[![codecov.io](http://codecov.io/github/jkozdon/PETScX.jl/coverage.svg?branch=master)](http://codecov.io/github/jkozdon/PETScX.jl?branch=master)
+[![Build Status](https://github.com/jkozdon/PETScX.jl/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jkozdon/PETScX.jl/actions/workflows/ci.yml?query=branch%3Amain)
+[![codecov.io](http://codecov.io/github/jkozdon/PETScX.jl/coverage.svg?branch=main)](http://codecov.io/github/jkozdon/PETScX.jl?branch=main)
+[![bors enabled](https://bors.tech/images/badge_small.svg)](https://app.bors.tech/repositories/34540)
 
 This package provides a low level interface for
 [PETSc](https://www.mcs.anl.gov/petsc/)
