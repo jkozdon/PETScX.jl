@@ -7,7 +7,7 @@ If `obj` is a `Function`, then the multiply action `obj(y,x)`; otherwise it call
 This can be changed by defining `PETSc._mul!`.
 
 """
-mutable struct MatShell{T, A} <: AbstractMat{T}
+mutable struct MatShell{T, PetscLib, A} <: AbstractMat{T, PetscLib}
     ptr::CMat
     comm::MPI.Comm
     obj::A
@@ -15,11 +15,15 @@ end
 
 struct MatOp{T, Op} end
 
-function _mul!(y, mat::MatShell{T, F}, x) where {T, F <: Function}
+function _mul!(
+    y,
+    mat::MatShell{T, PetscLib, F},
+    x,
+) where {T, PetscLib, F <: Function}
     mat.obj(y, x)
 end
 
-function _mul!(y, mat::MatShell{T}, x) where {T}
+function _mul!(y, mat::MatShell{T, PetscLib, F}, x) where {T, PetscLib, F}
     LinearAlgebra.mul!(y, mat.obj, x)
 end
 
@@ -29,12 +33,12 @@ MatShell{T}(obj, m, n) where {T} = MatShell{T}(obj, MPI.COMM_SELF, m, n, m, n)
     function MatShell{$PetscScalar}(
         obj::A,
         comm::MPI.Comm,
-        m,
-        n,
-        M,
-        N,
+        m::$PetscInt,
+        n::$PetscInt,
+        M::$PetscInt,
+        N::$PetscInt,
     ) where {A}
-        mat = MatShell{$PetscScalar, A}(C_NULL, comm, obj)
+        mat = MatShell{$PetscScalar, $PetscLib, A}(C_NULL, comm, obj)
         # we use the MatShell object itsel
         ctx = pointer_from_objref(mat)
         @chk ccall(

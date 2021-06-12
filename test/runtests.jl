@@ -2,6 +2,14 @@ using Test
 using PETSc, MPI, LinearAlgebra, SparseArrays
 
 @testset "Tests" begin
+    PetscScalar = Float64
+    petsclib = try
+        PETSc.getpetsclib(PetscScalar, Int64)
+    catch
+        PETSc.getpetsclib(PetscScalar, Int32)
+    end
+    PetscInt = PETSc.inttype(petsclib)
+
     m, n = 20, 20
     x = randn(n)
     V = PETSc.VecSeq(x)
@@ -9,7 +17,7 @@ using PETSc, MPI, LinearAlgebra, SparseArrays
     @test norm(x) ≈ norm(V) rtol = 10eps()
 
     S = sprand(m, n, 0.1) + I
-    M = PETSc.MatSeqAIJ(S)
+    M = PETSc.MatSeqAIJ(petsclib, S)
 
     @test norm(S) ≈ norm(M) rtol = 10eps()
 
@@ -58,7 +66,7 @@ using PETSc, MPI, LinearAlgebra, SparseArrays
 
     f!(y, x) = y .= 2 .* x
 
-    M = PETSc.MatShell{Float64}(f!, 10, 10)
+    M = PETSc.MatShell{Float64}(f!, PetscInt(10), PetscInt(10))
 
     x = rand(10)
 
@@ -71,7 +79,7 @@ using PETSc, MPI, LinearAlgebra, SparseArrays
     end
 
     J = zeros(2, 2)
-    PJ = PETSc.MatSeqDense(J)
+    PJ = PETSc.MatSeqDense(petsclib, J)
     function updateJ!(x, args...)
         J[1, 1] = 2x[1] + x[2]
         J[1, 2] = x[1]

@@ -134,12 +134,12 @@ macro for_libpetsc(expr)
             PetscReal = realtype(petsclib)
             PetscInt = inttype(petsclib)
             PetscLib = typeof(petsclib)
+            UnionPetscLib = Union{PetscLib, Type{PetscLib}}
             @eval esc($expr)
         end
     end
 end
 
 @for_libpetsc begin
-    # TODO: Remove this after full change over to PetscLibType
-    inttype(::Type{$PetscScalar}) = $PetscInt
+    getpetsclib(::Type{$PetscScalar}, ::Type{$PetscInt}) = $petsclib
 end

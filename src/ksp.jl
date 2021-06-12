@@ -164,8 +164,8 @@ struct Fn_KSPComputeOperators{T} end
     )::$PetscInt
         ksp = unsafe_pointer_to_objref(ksp_ptr)
         new_ksp = WrappedKSP{$PetscScalar}(new_ksp_ptr)
-        A = Mat{$PetscScalar}(cA)
-        P = Mat{$PetscScalar}(cP)
+        A = Mat{$PetscScalar, $PetscLib}(cA)
+        P = Mat{$PetscScalar, $PetscLib}(cP)
         ierr = ksp.ComputeOperators!(new_ksp, A, P)
         return $PetscInt(ierr)
     end
