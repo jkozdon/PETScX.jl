@@ -3,7 +3,7 @@
   "ci Julia 1.6 - macOS-latest",
   "ci Julia nightly - ubuntu-latest",
   "ci Julia nightly - macOS-latest",
-  "coverage",
+  "Julia formatter (1.6, ubuntu-latest, x64)",
 ]
 delete_merged_branches = true
 timeout_sec = 10800

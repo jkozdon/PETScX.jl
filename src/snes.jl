@@ -2,16 +2,15 @@
 const CSNES = Ptr{Cvoid}
 const CSNESType = Cstring
 
-
 mutable struct SNES{T}
     ptr::CSNES
     _comm::MPI.Comm
     opts::Options{T}
-    fn!
-    fn_vec
-    update_jac!
-    jac_A
-    jac_P
+    fn!::Any
+    fn_vec::Any
+    update_jac!::Any
+    jac_A::Any
+    jac_P::Any
 end
 
 scalartype(::SNES{T}) where {T} = T
@@ -27,12 +26,9 @@ Base.eltype(::SNES{T}) where {T} = T
 #  - https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/SNES/SNESComputeJacobianDefaultColor.html
 #  -
 
-struct SNESFn{T}
-end
+struct SNESFn{T} end
 
-struct SNESJac{T}
-end
-
+struct SNESJac{T} end
 
 #=
 function _snesfn(csnes::CSNES, cx::CVec, cfx::CVec, ctx::Ptr{Cvoid})
@@ -47,12 +43,26 @@ end
 =#
 
 @for_libpetsc begin
-
     function SNES{$PetscScalar}(comm::MPI.Comm; kwargs...)
         initialize($PetscScalar)
         opts = Options{$PetscScalar}(kwargs...)
-        snes = SNES{$PetscScalar}(C_NULL, comm, opts, nothing, nothing, nothing, nothing, nothing)
-        @chk ccall((:SNESCreate, $libpetsc), PetscErrorCode, (MPI.MPI_Comm, Ptr{CSNES}), comm, snes)
+        snes = SNES{$PetscScalar}(
+            C_NULL,
+            comm,
+            opts,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+        )
+        @chk ccall(
+            (:SNESCreate, $libpetsc),
+            PetscErrorCode,
+            (MPI.MPI_Comm, Ptr{CSNES}),
+            comm,
+            snes,
+        )
 
         with(snes.opts) do
             setfromoptions!(snes)
@@ -64,24 +74,42 @@ end
         return snes
     end
 
-
-    function (::SNESFn{$PetscScalar})(csnes::CSNES, cx::CVec, cfx::CVec, ctx::Ptr{Cvoid})::$PetscInt
+    function (::SNESFn{$PetscScalar})(
+        csnes::CSNES,
+        cx::CVec,
+        cfx::CVec,
+        ctx::Ptr{Cvoid},
+    )::$PetscInt
         snes = unsafe_pointer_to_objref(ctx)
-        x = unsafe_localarray($PetscScalar, cx; write=false)
-        fx = unsafe_localarray($PetscScalar, cfx; read=false)
+        x = unsafe_localarray($PetscScalar, cx; write = false)
+        fx = unsafe_localarray($PetscScalar, cfx; read = false)
         snes.fn!(fx, x)
         Base.finalize(x)
         Base.finalize(fx)
         return $PetscInt(0)
     end
 
-    function setfunction!(snes::SNES{$PetscScalar}, fn!, vec::AbstractVec{$PetscScalar})
+    function setfunction!(
+        snes::SNES{$PetscScalar},
+        fn!,
+        vec::AbstractVec{$PetscScalar},
+    )
         ctx = pointer_from_objref(snes)
-        fptr = @cfunction(SNESFn{$PetscScalar}(), $PetscInt, (CSNES, CVec, CVec, Ptr{Cvoid}))
+        fptr = @cfunction(
+            SNESFn{$PetscScalar}(),
+            $PetscInt,
+            (CSNES, CVec, CVec, Ptr{Cvoid})
+        )
         with(snes.opts) do
-            @chk ccall((:SNESSetFunction, $libpetsc), PetscErrorCode,
+            @chk ccall(
+                (:SNESSetFunction, $libpetsc),
+                PetscErrorCode,
                 (CSNES, CVec, Ptr{Cvoid}, Ptr{Cvoid}),
-                snes, vec, fptr, ctx)
+                snes,
+                vec,
+                fptr,
+                ctx,
+            )
         end
         snes.fn_vec = vec
         snes.fn! = fn!
@@ -89,49 +117,93 @@ end
     end
 
     function destroy(snes::SNES{$PetscScalar})
-        finalized($PetscScalar) ||
-            @chk ccall((:SNESDestroy, $libpetsc), PetscErrorCode, (Ptr{CSNES},), snes)
+        finalized($PetscScalar) || @chk ccall(
+            (:SNESDestroy, $libpetsc),
+            PetscErrorCode,
+            (Ptr{CSNES},),
+            snes,
+        )
         return nothing
     end
 
     function setfromoptions!(snes::SNES{$PetscScalar})
-        @chk ccall((:SNESSetFromOptions, $libpetsc), PetscErrorCode, (CSNES,), snes)
+        @chk ccall(
+            (:SNESSetFromOptions, $libpetsc),
+            PetscErrorCode,
+            (CSNES,),
+            snes,
+        )
     end
 
     function gettype(snes::SNES{$PetscScalar})
         t_r = Ref{CSNESType}()
-        @chk ccall((:SNESGetType, $libpetsc), PetscErrorCode, (CSNES, Ptr{CSNESType}), snes, t_r)
+        @chk ccall(
+            (:SNESGetType, $libpetsc),
+            PetscErrorCode,
+            (CSNES, Ptr{CSNESType}),
+            snes,
+            t_r,
+        )
         return unsafe_string(t_r[])
     end
 
-    function view(snes::SNES{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(PetscObjectGetComm(snes)))
-        @chk ccall((:SNESView, $libpetsc), PetscErrorCode,
-                    (CSNES, CPetscViewer),
-                snes, viewer);
+    function view(
+        snes::SNES{$PetscScalar},
+        viewer::Viewer{$PetscScalar} = ViewerStdout{$PetscScalar}(
+            PetscObjectGetComm(snes),
+        ),
+    )
+        @chk ccall(
+            (:SNESView, $libpetsc),
+            PetscErrorCode,
+            (CSNES, CPetscViewer),
+            snes,
+            viewer,
+        )
         return nothing
     end
 
-
-
-    function (::SNESJac{$PetscScalar})(csnes::CSNES, cx::CVec, cA::CMat, cP::CMat, ctx::Ptr{Cvoid})::$PetscInt
+    function (::SNESJac{$PetscScalar})(
+        csnes::CSNES,
+        cx::CVec,
+        cA::CMat,
+        cP::CMat,
+        ctx::Ptr{Cvoid},
+    )::$PetscInt
         snes = unsafe_pointer_to_objref(ctx)
         @assert snes.ptr == csnes
         @assert snes.jac_A.ptr == cA
         @assert snes.jac_P.ptr == cP
-        x = unsafe_localarray($PetscScalar, cx; write=false)
+        x = unsafe_localarray($PetscScalar, cx; write = false)
         snes.update_jac!(x, snes.jac_A, snes.jac_P)
         Base.finalize(x)
         return $PetscInt(0)
     end
 
-    function setjacobian!(snes::SNES{$PetscScalar}, update_jac!, A::AbstractMat{$PetscScalar}, P::AbstractMat{$PetscScalar}=A)
+    function setjacobian!(
+        snes::SNES{$PetscScalar},
+        update_jac!,
+        A::AbstractMat{$PetscScalar},
+        P::AbstractMat{$PetscScalar} = A,
+    )
         ctx = pointer_from_objref(snes)
-        jacptr = @cfunction(SNESJac{$PetscScalar}(), $PetscInt, (CSNES, CVec, CMat, CMat, Ptr{Cvoid}))
+        jacptr = @cfunction(
+            SNESJac{$PetscScalar}(),
+            $PetscInt,
+            (CSNES, CVec, CMat, CMat, Ptr{Cvoid})
+        )
 
         with(snes.opts) do
-            @chk ccall((:SNESSetJacobian, $libpetsc), PetscErrorCode,
+            @chk ccall(
+                (:SNESSetJacobian, $libpetsc),
+                PetscErrorCode,
                 (CSNES, CMat, CMat, Ptr{Cvoid}, Ptr{Cvoid}),
-                snes, A, P, jacptr, ctx)
+                snes,
+                A,
+                P,
+                jacptr,
+                ctx,
+            )
         end
         snes.update_jac! = update_jac!
         snes.jac_A = A
@@ -139,22 +211,37 @@ end
         return nothing
     end
 
-
-    function solve!(x::AbstractVec{$PetscScalar}, snes::SNES{$PetscScalar}, b::AbstractVec{$PetscScalar})
+    function solve!(
+        x::AbstractVec{$PetscScalar},
+        snes::SNES{$PetscScalar},
+        b::AbstractVec{$PetscScalar},
+    )
         with(snes.opts) do
-            @chk ccall((:SNESSolve, $libpetsc), PetscErrorCode,
-            (CSNES, CVec, CVec), snes, b, x)
+            @chk ccall(
+                (:SNESSolve, $libpetsc),
+                PetscErrorCode,
+                (CSNES, CVec, CVec),
+                snes,
+                b,
+                x,
+            )
         end
         return x
     end
     function solve!(x::AbstractVec{$PetscScalar}, snes::SNES{$PetscScalar})
         with(snes.opts) do
-            @chk ccall((:SNESSolve, $libpetsc), PetscErrorCode,
-            (CSNES, CVec, CVec), snes, C_NULL, x)
+            @chk ccall(
+                (:SNESSolve, $libpetsc),
+                PetscErrorCode,
+                (CSNES, CVec, CVec),
+                snes,
+                C_NULL,
+                x,
+            )
         end
         return x
     end
-
 end
 
-solve!(x::AbstractVector{T}, snes::SNES{T}) where {T} = parent(solve!(AbstractVec(x), snes))
+solve!(x::AbstractVector{T}, snes::SNES{T}) where {T} =
+    parent(solve!(AbstractVec(x), snes))

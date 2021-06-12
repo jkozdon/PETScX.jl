@@ -1,14 +1,23 @@
 
 @for_libpetsc begin
-
     function incref(::Type{$PetscScalar}, obj)
-        @chk ccall((:PetscObjectReference, $libpetsc), PetscErrorCode, (Ptr{Cvoid},), obj)
+        @chk ccall(
+            (:PetscObjectReference, $libpetsc),
+            PetscErrorCode,
+            (Ptr{Cvoid},),
+            obj,
+        )
         return nothing
     end
 
     function decref(::Type{$PetscScalar}, obj)
         if !finalized($PetscScalar)
-            @chk ccall((:PetscObjectDereference, $libpetsc), PetscErrorCode, (Ptr{Cvoid},), obj)
+            @chk ccall(
+                (:PetscObjectDereference, $libpetsc),
+                PetscErrorCode,
+                (Ptr{Cvoid},),
+                obj,
+            )
             obj.ptr = C_NULL
         end
         return nothing
@@ -16,10 +25,15 @@
 
     function nrefs(::Type{$PetscScalar}, obj)
         r_n = Ref{$PetscInt}()
-        @chk ccall((:PetscObjectGetReference, $libpetsc), PetscErrorCode, (Ptr{Cvoid},Ptr{$PetscInt}), obj, r_n)
+        @chk ccall(
+            (:PetscObjectGetReference, $libpetsc),
+            PetscErrorCode,
+            (Ptr{Cvoid}, Ptr{$PetscInt}),
+            obj,
+            r_n,
+        )
         return r_n[]
     end
-
 end
 
 """
@@ -44,4 +58,4 @@ decref(obj) = decref(scalartype(obj), obj)
 
 The current reference count for `obj`.
 """
-nrefs(obj)  = nrefs(scalartype(obj), obj)
+nrefs(obj) = nrefs(scalartype(obj), obj)

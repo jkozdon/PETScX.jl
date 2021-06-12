@@ -2,12 +2,11 @@
 # we need to parametrise by type so we know which library to call
 abstract type Viewer{T} end
 
-const CPetscViewer         = Ptr{Cvoid}
+const CPetscViewer = Ptr{Cvoid}
 
 Base.cconvert(::Type{CPetscViewer}, obj::Viewer) = obj.ptr
-Base.unsafe_convert(::Type{Ptr{CPetscViewer}}, obj::Viewer) = 
+Base.unsafe_convert(::Type{Ptr{CPetscViewer}}, obj::Viewer) =
     convert(Ptr{CPetscViewer}, pointer_from_objref(obj))
-
 
 mutable struct ViewerStdout{T} <: Viewer{T}
     ptr::CPetscViewer
@@ -15,19 +14,34 @@ mutable struct ViewerStdout{T} <: Viewer{T}
 end
 
 @for_libpetsc begin
-    function ViewerStdout{$PetscScalar}(comm::MPI.Comm=MPI.COMM_SELF)
-        ptr = ccall((:PETSC_VIEWER_STDOUT_, $libpetsc), CPetscViewer, (MPI.MPI_Comm,), comm)
+    function ViewerStdout{$PetscScalar}(comm::MPI.Comm = MPI.COMM_SELF)
+        ptr = ccall(
+            (:PETSC_VIEWER_STDOUT_, $libpetsc),
+            CPetscViewer,
+            (MPI.MPI_Comm,),
+            comm,
+        )
         return ViewerStdout{$PetscScalar}(ptr, comm)
     end
     function Base.push!(viewer::Viewer{$PetscScalar}, format::PetscViewerFormat)
-        @chk ccall((:PetscViewerPushFormat, $libpetsc), PetscErrorCode, (CPetscViewer,PetscViewerFormat), viewer, format)
+        @chk ccall(
+            (:PetscViewerPushFormat, $libpetsc),
+            PetscErrorCode,
+            (CPetscViewer, PetscViewerFormat),
+            viewer,
+            format,
+        )
         return nothing
     end
     function Base.pop!(viewer::Viewer{$PetscScalar})
-        @chk ccall((:PetscViewerPopFormat, $libpetsc), PetscErrorCode, (CPetscViewer,), viewer)
+        @chk ccall(
+            (:PetscViewerPopFormat, $libpetsc),
+            PetscErrorCode,
+            (CPetscViewer,),
+            viewer,
+        )
         return nothing
     end
-
 end
 
 function with(f, viewer::Viewer, format::PetscViewerFormat)
@@ -55,8 +69,6 @@ function _show(io::IO, obj)
     end
     return nothing
 end
-
-
 
 #=
 # PETSc_jll isn't built with X support

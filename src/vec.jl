@@ -43,37 +43,61 @@ struct Vec{T} <: AbstractVec{T}
     ptr::CVec
 end
 
-Base.eltype(::Type{V}) where {V<:AbstractVec{T}} where T = T
+Base.eltype(::Type{V}) where {V <: AbstractVec{T}} where {T} = T
 Base.eltype(v::AbstractVec{T}) where {T} = T
 Base.size(v::AbstractVec) = (length(v),)
 Base.parent(v::AbstractVec) = v.array
 
 @for_libpetsc begin
-    function VecSeq(comm::MPI.Comm, X::Vector{$PetscScalar}; blocksize=1)
+    function VecSeq(comm::MPI.Comm, X::Vector{$PetscScalar}; blocksize = 1)
         initialize($PetscScalar)
         v = VecSeq(C_NULL, comm, X)
-        @chk ccall((:VecCreateSeqWithArray, $libpetsc), PetscErrorCode,
-                (MPI.MPI_Comm, $PetscInt, $PetscInt, Ptr{$PetscScalar}, Ptr{CVec}),
-                comm, blocksize, length(X), X, v)
+        @chk ccall(
+            (:VecCreateSeqWithArray, $libpetsc),
+            PetscErrorCode,
+            (MPI.MPI_Comm, $PetscInt, $PetscInt, Ptr{$PetscScalar}, Ptr{CVec}),
+            comm,
+            blocksize,
+            length(X),
+            X,
+            v,
+        )
         finalizer(destroy, v)
         return v
     end
     function destroy(v::AbstractVec{$PetscScalar})
-        finalized($PetscScalar) ||
-        @chk ccall((:VecDestroy, $libpetsc), PetscErrorCode, (Ptr{CVec},), v)
+        finalized($PetscScalar) || @chk ccall(
+            (:VecDestroy, $libpetsc),
+            PetscErrorCode,
+            (Ptr{CVec},),
+            v,
+        )
         return nothing
     end
     function Base.length(v::AbstractVec{$PetscScalar})
         r_sz = Ref{$PetscInt}()
-        @chk ccall((:VecGetSize, $libpetsc), PetscErrorCode,
-          (CVec, Ptr{$PetscInt}), v, r_sz)
+        @chk ccall(
+            (:VecGetSize, $libpetsc),
+            PetscErrorCode,
+            (CVec, Ptr{$PetscInt}),
+            v,
+            r_sz,
+        )
         return r_sz[]
     end
-    function LinearAlgebra.norm(v::AbstractVec{$PetscScalar}, normtype::NormType=NORM_2)
+    function LinearAlgebra.norm(
+        v::AbstractVec{$PetscScalar},
+        normtype::NormType = NORM_2,
+    )
         r_val = Ref{$PetscReal}()
-        @chk ccall((:VecNorm, $libpetsc), PetscErrorCode,
-                   (CVec, NormType, Ptr{$PetscReal}),
-                   v, normtype,r_val)
+        @chk ccall(
+            (:VecNorm, $libpetsc),
+            PetscErrorCode,
+            (CVec, NormType, Ptr{$PetscReal}),
+            v,
+            normtype,
+            r_val,
+        )
         return r_val[]
     end
 
@@ -89,15 +113,30 @@ Base.parent(v::AbstractVec) = v.array
     function ownershiprange(vec::AbstractVec{$PetscScalar})
         r_lo = Ref{$PetscInt}()
         r_hi = Ref{$PetscInt}()
-        @chk ccall((:VecGetOwnershipRange, $libpetsc), PetscErrorCode,
-          (CVec, Ptr{$PetscInt}, Ptr{$PetscInt}), vec, r_lo, r_hi)
-        r_lo[]:(r_hi[]-$PetscInt(1))
+        @chk ccall(
+            (:VecGetOwnershipRange, $libpetsc),
+            PetscErrorCode,
+            (CVec, Ptr{$PetscInt}, Ptr{$PetscInt}),
+            vec,
+            r_lo,
+            r_hi,
+        )
+        r_lo[]:(r_hi[] - $PetscInt(1))
     end
 
-    function view(vec::AbstractVec{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(PetscObjectGetComm(vec)))
-        @chk ccall((:VecView, $libpetsc), PetscErrorCode,
-                    (CVec, CPetscViewer),
-                vec, viewer);
+    function view(
+        vec::AbstractVec{$PetscScalar},
+        viewer::Viewer{$PetscScalar} = ViewerStdout{$PetscScalar}(
+            PetscObjectGetComm(vec),
+        ),
+    )
+        @chk ccall(
+            (:VecView, $libpetsc),
+            PetscErrorCode,
+            (CVec, CPetscViewer),
+            vec,
+            viewer,
+        )
         return nothing
     end
 
@@ -105,40 +144,83 @@ Base.parent(v::AbstractVec) = v.array
         return r_sz[]
     end
 
-    function unsafe_localarray(::Type{$PetscScalar}, cv::CVec; read::Bool=true, write::Bool=true)
+    function unsafe_localarray(
+        ::Type{$PetscScalar},
+        cv::CVec;
+        read::Bool = true,
+        write::Bool = true,
+    )
         r_pv = Ref{Ptr{$PetscScalar}}()
         if write
             if read
-                @chk ccall((:VecGetArray, $libpetsc), PetscErrorCode,
-                    (CVec, Ptr{Ptr{$PetscScalar}}), cv, r_pv)
+                @chk ccall(
+                    (:VecGetArray, $libpetsc),
+                    PetscErrorCode,
+                    (CVec, Ptr{Ptr{$PetscScalar}}),
+                    cv,
+                    r_pv,
+                )
             else
-                @chk ccall((:VecGetArrayWrite, $libpetsc), PetscErrorCode,
-                    (CVec, Ptr{Ptr{$PetscScalar}}), cv, r_pv)
+                @chk ccall(
+                    (:VecGetArrayWrite, $libpetsc),
+                    PetscErrorCode,
+                    (CVec, Ptr{Ptr{$PetscScalar}}),
+                    cv,
+                    r_pv,
+                )
             end
         else
-            @chk ccall((:VecGetArrayRead, $libpetsc), PetscErrorCode,
-                (CVec, Ptr{Ptr{$PetscScalar}}), cv, r_pv)
+            @chk ccall(
+                (:VecGetArrayRead, $libpetsc),
+                PetscErrorCode,
+                (CVec, Ptr{Ptr{$PetscScalar}}),
+                cv,
+                r_pv,
+            )
         end
         r_sz = Ref{$PetscInt}()
-        @chk ccall((:VecGetLocalSize, $libpetsc), PetscErrorCode,
-            (CVec, Ptr{$PetscInt}), cv, r_sz)
+        @chk ccall(
+            (:VecGetLocalSize, $libpetsc),
+            PetscErrorCode,
+            (CVec, Ptr{$PetscInt}),
+            cv,
+            r_sz,
+        )
         v = unsafe_wrap(Array, r_pv[], r_sz[]; own = false)
 
         if write
             if read
                 finalizer(v) do v
-                    @chk ccall((:VecRestoreArray, $libpetsc), PetscErrorCode, (CVec, Ptr{Ptr{$PetscScalar}}), cv, Ref(pointer(v)))
+                    @chk ccall(
+                        (:VecRestoreArray, $libpetsc),
+                        PetscErrorCode,
+                        (CVec, Ptr{Ptr{$PetscScalar}}),
+                        cv,
+                        Ref(pointer(v)),
+                    )
                     return nothing
                 end
             else
                 finalizer(v) do v
-                    @chk ccall((:VecRestoreArrayWrite, $libpetsc), PetscErrorCode, (CVec, Ptr{Ptr{$PetscScalar}}), cv, Ref(pointer(v)))
+                    @chk ccall(
+                        (:VecRestoreArrayWrite, $libpetsc),
+                        PetscErrorCode,
+                        (CVec, Ptr{Ptr{$PetscScalar}}),
+                        cv,
+                        Ref(pointer(v)),
+                    )
                     return nothing
                 end
             end
         else
             finalizer(v) do v
-                @chk ccall((:VecRestoreArrayRead, $libpetsc), PetscErrorCode, (CVec, Ptr{Ptr{$PetscScalar}}), cv, Ref(pointer(v)))
+                @chk ccall(
+                    (:VecRestoreArrayRead, $libpetsc),
+                    PetscErrorCode,
+                    (CVec, Ptr{Ptr{$PetscScalar}}),
+                    cv,
+                    Ref(pointer(v)),
+                )
                 return nothing
             end
         end
@@ -184,15 +266,12 @@ function map_unsafe_localarray!(f!, v::AbstractVec{T}; kwargs...) where {T}
     Base.finalize(array)
 end
 
-
-
 function Base.show(io::IO, ::MIME"text/plain", vec::AbstractVec)
     _show(io, vec)
 end
 
 VecSeq(X::Vector{T}; kwargs...) where {T} = VecSeq(MPI.COMM_SELF, X; kwargs...)
 AbstractVec(X::AbstractVector) = VecSeq(X)
-
 
 """
     ownership_range(vec::AbstractVec)
@@ -204,4 +283,3 @@ Note: unlike the C function, the range returned is inclusive (`idx_first:idx_las
 https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/Vec/VecGetOwnershipRange.html
 """
 ownershiprange
-

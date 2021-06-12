@@ -7,7 +7,10 @@ PETSc.initialize()
 #  Δu = -cos(π * x) * cos(π * y)
 #
 # with zeros Neumann boundary conditions
-function rhs!(ksp::PETSc.AbstractKSP{PetscScalar}, b_vec::PETSc.AbstractVec{PetscScalar}) where {PetscScalar}
+function rhs!(
+    ksp::PETSc.AbstractKSP{PetscScalar},
+    b_vec::PETSc.AbstractVec{PetscScalar},
+) where {PetscScalar}
     dm = PETSc.KSPGetDM(ksp)
     comm = PETSc.PetscObjectGetComm(ksp)
     corners = PETSc.DMDAGetCorners(dm)
@@ -135,7 +138,7 @@ function main(PetscScalar; comm = MPI.COMM_WORLD, options...)
         dof_per_node,
         stencil_width,
         points_per_proc...;
-        opts...
+        opts...,
     )
 
     PETSc.DMSetUp!(da)
