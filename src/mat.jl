@@ -10,8 +10,7 @@ Base.cconvert(::Type{CMat}, obj::AbstractMat) = obj.ptr
 Base.unsafe_convert(::Type{Ptr{CMat}}, obj::AbstractMat) =
     convert(Ptr{CMat}, pointer_from_objref(obj))
 
-
-Base.eltype(::Type{A}) where {A<:AbstractMat{T}} where {T} = T
+Base.eltype(::Type{A}) where {A <: AbstractMat{T}} where {T} = T
 Base.eltype(A::AbstractMat{T}) where {T} = T
 
 """
@@ -25,7 +24,6 @@ mutable struct MatSeqAIJ{T} <: AbstractMat{T}
     ptr::CMat
     _comm::MPI.Comm
 end
-
 
 """
     Mat{T}
@@ -65,35 +63,40 @@ struct MatStencil{PetscInt}
     i::PetscInt
     "degree of freedom"
     c::PetscInt
-    function MatStencil{PetscInt}(;i, j = 1, k = 1, c = 1) where PetscInt
-      # convert to zero-based indexing
-      new{PetscInt}(k - 1, j - 1, i - 1, c - 1)
+    function MatStencil{PetscInt}(; i, j = 1, k = 1, c = 1) where {PetscInt}
+        # convert to zero-based indexing
+        new{PetscInt}(k - 1, j - 1, i - 1, c - 1)
     end
 end
 # Since julia uses 1-based indexing we need to convert on access
-function Base.getproperty(obj::MatStencil{PetscInt}, sym::Symbol) where PetscInt
-  if sym in (:i, :j, :k, :c)
-    return getfield(obj, sym) + PetscInt(1)
-  else # fallback to getfield
-      return getfield(obj, sym)
-  end
+function Base.getproperty(
+    obj::MatStencil{PetscInt},
+    sym::Symbol,
+) where {PetscInt}
+    if sym in (:i, :j, :k, :c)
+        return getfield(obj, sym) + PetscInt(1)
+    else # fallback to getfield
+        return getfield(obj, sym)
+    end
 end
 # Since julia uses 1-based indexing we need to convert on show
 function Base.show(io::IO, m::MatStencil{PetscInt}) where {PetscInt}
-  print(io, typeof(m))
-  print(io, "(i = ", m.i,)
-  print(io, ", j = ", m.j,)
-  print(io, ", k = ", m.k,)
-  print(io, ", c = ", m.c, ")")
+    print(io, typeof(m))
+    print(io, "(i = ", m.i)
+    print(io, ", j = ", m.j)
+    print(io, ", k = ", m.k)
+    print(io, ", c = ", m.c, ")")
 end
-function Base.show(io::IO, ::MIME"text/plain", m::MatStencil{PetscInt}) where PetscInt
-  print(io, "(i = ", m.i,)
-  print(io, ", j = ", m.j,)
-  print(io, ", k = ", m.k,)
-  print(io, ", c = ", m.c, ")")
+function Base.show(
+    io::IO,
+    ::MIME"text/plain",
+    m::MatStencil{PetscInt},
+) where {PetscInt}
+    print(io, "(i = ", m.i)
+    print(io, ", j = ", m.j)
+    print(io, ", k = ", m.k)
+    print(io, ", c = ", m.c, ")")
 end
-
-
 
 """
     MatNullSpace{T}
@@ -153,18 +156,25 @@ see [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/
 function MatSetValuesStencil! end
 
 @for_libpetsc begin
-    function MatNullSpace{$PetscScalar}(comm::MPI.Comm, has_constant, n=0, vecs=nothing)
+    function MatNullSpace{$PetscScalar}(
+        comm::MPI.Comm,
+        has_constant,
+        n = 0,
+        vecs = nothing,
+    )
         initialize($PetscScalar)
         @assert n == 0 && isnothing(vecs)
         nullspace = MatNullSpace{$PetscScalar}(C_NULL, comm)
-        @chk ccall((:MatNullSpaceCreate, $libpetsc), PetscErrorCode,
-                (MPI.MPI_Comm,
-                 PetscBool,
-                 $PetscInt,
-                 Ptr{CVec},
-                 Ptr{CMatNullSpace}
-                ),
-                comm, has_constant, n, C_NULL, nullspace)
+        @chk ccall(
+            (:MatNullSpaceCreate, $libpetsc),
+            PetscErrorCode,
+            (MPI.MPI_Comm, PetscBool, $PetscInt, Ptr{CVec}, Ptr{CMatNullSpace}),
+            comm,
+            has_constant,
+            n,
+            C_NULL,
+            nullspace,
+        )
         return nullspace
     end
 
@@ -182,7 +192,6 @@ function MatSetValuesStencil! end
         return nothing
     end
 
-
     function MatSetNullSpace!(
         mat::Mat{$PetscScalar},
         nullspace::MatNullSpace{$PetscScalar},
@@ -198,18 +207,41 @@ function MatSetValuesStencil! end
     end
 
     function destroy(nullspace::MatNullSpace{$PetscScalar})
-        finalized($PetscScalar) ||
-        @chk ccall((:MatNullSpaceDestroy, $libpetsc), PetscErrorCode, (Ptr{CMatNullSpace},), nullspace)
+        finalized($PetscScalar) || @chk ccall(
+            (:MatNullSpaceDestroy, $libpetsc),
+            PetscErrorCode,
+            (Ptr{CMatNullSpace},),
+            nullspace,
+        )
         return nothing
     end
 
-    function MatSeqAIJ{$PetscScalar}(m::Integer, n::Integer, nnz::Vector{$PetscInt})
+    function MatSeqAIJ{$PetscScalar}(
+        m::Integer,
+        n::Integer,
+        nnz::Vector{$PetscInt},
+    )
         initialize($PetscScalar)
         comm = MPI.COMM_SELF
         mat = MatSeqAIJ{$PetscScalar}(C_NULL, comm)
-        @chk ccall((:MatCreateSeqAIJ, $libpetsc), PetscErrorCode,
-                (MPI.MPI_Comm, $PetscInt, $PetscInt, $PetscInt, Ptr{$PetscInt}, Ptr{CMat}),
-                comm, m, n, 0, nnz, mat)
+        @chk ccall(
+            (:MatCreateSeqAIJ, $libpetsc),
+            PetscErrorCode,
+            (
+                MPI.MPI_Comm,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                Ptr{$PetscInt},
+                Ptr{CMat},
+            ),
+            comm,
+            m,
+            n,
+            0,
+            nnz,
+            mat,
+        )
         finalizer(destroy, mat)
         return mat
     end
@@ -217,150 +249,305 @@ function MatSetValuesStencil! end
         initialize($PetscScalar)
         comm = MPI.COMM_SELF
         mat = MatSeqDense(C_NULL, comm, A)
-        @chk ccall((:MatCreateSeqDense, $libpetsc), PetscErrorCode, 
+        @chk ccall(
+            (:MatCreateSeqDense, $libpetsc),
+            PetscErrorCode,
             (MPI.MPI_Comm, $PetscInt, $PetscInt, Ptr{$PetscScalar}, Ptr{CMat}),
-            comm, size(A,1), size(A,2), A, mat)
+            comm,
+            size(A, 1),
+            size(A, 2),
+            A,
+            mat,
+        )
         finalizer(destroy, mat)
         return mat
     end
 
-    function MatSetValuesStencil!(mat::AbstractMat{$PetscScalar},
-        rows::Vector{MatStencil{$PetscInt}}, 
-        cols::Vector{MatStencil{$PetscInt}}, 
+    function MatSetValuesStencil!(
+        mat::AbstractMat{$PetscScalar},
+        rows::Vector{MatStencil{$PetscInt}},
+        cols::Vector{MatStencil{$PetscInt}},
         vals::Vector{$PetscScalar},
         mode::InsertMode;
         num_rows = length(rows),
         num_cols = length(cols),
-      )
+    )
         @assert length(vals) >= num_cols * num_rows
         @assert length(cols) >= num_cols
         @assert length(rows) >= num_rows
-        @chk ccall((:MatSetValuesStencil, $libpetsc), PetscErrorCode, 
-                   (CMat,
-                    $PetscInt, Ptr{MatStencil{$PetscInt}},
-                    $PetscInt, Ptr{MatStencil{$PetscInt}},
-                    Ptr{$PetscScalar}, InsertMode),
-                   mat,
-                   num_rows, rows,
-                   num_cols, cols,
-                   vals, mode
-                  )
+        @chk ccall(
+            (:MatSetValuesStencil, $libpetsc),
+            PetscErrorCode,
+            (
+                CMat,
+                $PetscInt,
+                Ptr{MatStencil{$PetscInt}},
+                $PetscInt,
+                Ptr{MatStencil{$PetscInt}},
+                Ptr{$PetscScalar},
+                InsertMode,
+            ),
+            mat,
+            num_rows,
+            rows,
+            num_cols,
+            cols,
+            vals,
+            mode,
+        )
         return nothing
     end
-
-
-
 
     function destroy(M::AbstractMat{$PetscScalar})
-        finalized($PetscScalar) ||
-        @chk ccall((:MatDestroy, $libpetsc), PetscErrorCode, (Ptr{CMat},), M)
+        finalized($PetscScalar) || @chk ccall(
+            (:MatDestroy, $libpetsc),
+            PetscErrorCode,
+            (Ptr{CMat},),
+            M,
+        )
         return nothing
     end
 
-    function setvalues!(M::AbstractMat{$PetscScalar}, row0idxs::Vector{$PetscInt}, col0idxs::Vector{$PetscInt}, rowvals::Array{$PetscScalar}, insertmode::InsertMode)
-        @chk ccall((:MatSetValues, $libpetsc), PetscErrorCode, 
-            (CMat, $PetscInt, Ptr{$PetscInt}, $PetscInt, Ptr{$PetscInt}, Ptr{$PetscScalar},InsertMode),
-            M, length(row0idxs), row0idxs, length(col0idxs), col0idxs, rowvals, insertmode)
+    function setvalues!(
+        M::AbstractMat{$PetscScalar},
+        row0idxs::Vector{$PetscInt},
+        col0idxs::Vector{$PetscInt},
+        rowvals::Array{$PetscScalar},
+        insertmode::InsertMode,
+    )
+        @chk ccall(
+            (:MatSetValues, $libpetsc),
+            PetscErrorCode,
+            (
+                CMat,
+                $PetscInt,
+                Ptr{$PetscInt},
+                $PetscInt,
+                Ptr{$PetscInt},
+                Ptr{$PetscScalar},
+                InsertMode,
+            ),
+            M,
+            length(row0idxs),
+            row0idxs,
+            length(col0idxs),
+            col0idxs,
+            rowvals,
+            insertmode,
+        )
         return nothing
     end
 
-
-    function Base.setindex!(M::AbstractMat{$PetscScalar}, val, i::Integer, j::Integer)    
-        @chk ccall((:MatSetValues, $libpetsc), PetscErrorCode, 
-            (CMat, $PetscInt, Ptr{$PetscInt}, $PetscInt, Ptr{$PetscInt}, Ptr{$PetscScalar}, InsertMode),
-            M, 1, Ref{$PetscInt}(i-1), 1, Ref{$PetscInt}(j-1), Ref{$PetscScalar}(val), INSERT_VALUES)
+    function Base.setindex!(
+        M::AbstractMat{$PetscScalar},
+        val,
+        i::Integer,
+        j::Integer,
+    )
+        @chk ccall(
+            (:MatSetValues, $libpetsc),
+            PetscErrorCode,
+            (
+                CMat,
+                $PetscInt,
+                Ptr{$PetscInt},
+                $PetscInt,
+                Ptr{$PetscInt},
+                Ptr{$PetscScalar},
+                InsertMode,
+            ),
+            M,
+            1,
+            Ref{$PetscInt}(i - 1),
+            1,
+            Ref{$PetscInt}(j - 1),
+            Ref{$PetscScalar}(val),
+            INSERT_VALUES,
+        )
         return val
     end
 
-
-    function assemblybegin(M::AbstractMat{$PetscScalar}, t::MatAssemblyType=MAT_FINAL_ASSEMBLY)
-        @chk ccall((:MatAssemblyBegin, $libpetsc), PetscErrorCode, (CMat, MatAssemblyType), M, t)
+    function assemblybegin(
+        M::AbstractMat{$PetscScalar},
+        t::MatAssemblyType = MAT_FINAL_ASSEMBLY,
+    )
+        @chk ccall(
+            (:MatAssemblyBegin, $libpetsc),
+            PetscErrorCode,
+            (CMat, MatAssemblyType),
+            M,
+            t,
+        )
         return nothing
     end
-    function assemblyend(M::AbstractMat{$PetscScalar}, t::MatAssemblyType=MAT_FINAL_ASSEMBLY)
-        @chk ccall((:MatAssemblyEnd, $libpetsc), PetscErrorCode, (CMat, MatAssemblyType), M, t)
+    function assemblyend(
+        M::AbstractMat{$PetscScalar},
+        t::MatAssemblyType = MAT_FINAL_ASSEMBLY,
+    )
+        @chk ccall(
+            (:MatAssemblyEnd, $libpetsc),
+            PetscErrorCode,
+            (CMat, MatAssemblyType),
+            M,
+            t,
+        )
         return nothing
     end
-    function view(mat::AbstractMat{$PetscScalar}, viewer::Viewer{$PetscScalar}=ViewerStdout{$PetscScalar}(PetscObjectGetComm(mat)))
-        @chk ccall((:MatView, $libpetsc), PetscErrorCode, 
-                    (CMat, CPetscViewer),
-                mat, viewer);
+    function view(
+        mat::AbstractMat{$PetscScalar},
+        viewer::Viewer{$PetscScalar} = ViewerStdout{$PetscScalar}(
+            PetscObjectGetComm(mat),
+        ),
+    )
+        @chk ccall(
+            (:MatView, $libpetsc),
+            PetscErrorCode,
+            (CMat, CPetscViewer),
+            mat,
+            viewer,
+        )
         return nothing
     end
-
 
     function Base.size(A::AbstractMat{$PetscScalar})
         m = Ref{$PetscInt}()
         n = Ref{$PetscInt}()
-        @chk ccall((:MatGetSize, $libpetsc), PetscErrorCode,
-            (CMat, Ptr{$PetscInt}, Ptr{$PetscInt}), 
-            A, m, n)
+        @chk ccall(
+            (:MatGetSize, $libpetsc),
+            PetscErrorCode,
+            (CMat, Ptr{$PetscInt}, Ptr{$PetscInt}),
+            A,
+            m,
+            n,
+        )
         return (m[], n[])
     end
-    function Base.:(==)(A::AbstractMat{$PetscScalar}, B::AbstractMat{$PetscScalar})
+    function Base.:(==)(
+        A::AbstractMat{$PetscScalar},
+        B::AbstractMat{$PetscScalar},
+    )
         fr = Ref{PetscBool}()
-        @chk ccall((:MatEqual, $libpetsc), PetscErrorCode, 
-             (CMat, CMat, Ptr{PetscBool}), 
-             A, B, fr)
+        @chk ccall(
+            (:MatEqual, $libpetsc),
+            PetscErrorCode,
+            (CMat, CMat, Ptr{PetscBool}),
+            A,
+            B,
+            fr,
+        )
         return fr[] == PETSC_TRUE
     end
-    
-    function LinearAlgebra.issymmetric(A::AbstractMat{$PetscScalar}; tol=zero($PetscReal))
+
+    function LinearAlgebra.issymmetric(
+        A::AbstractMat{$PetscScalar};
+        tol = zero($PetscReal),
+    )
         fr = Ref{PetscBool}()
-        @chk ccall((:MatIsSymmetric, $libpetsc), PetscErrorCode,
+        @chk ccall(
+            (:MatIsSymmetric, $libpetsc),
+            PetscErrorCode,
             (CMat, $PetscReal, Ptr{PetscBool}),
-            A, tol, fr)
+            A,
+            tol,
+            fr,
+        )
         return fr[] == PETSC_TRUE
     end
-    function LinearAlgebra.ishermitian(A::AbstractMat{$PetscScalar}; tol=zero($PetscReal))
+    function LinearAlgebra.ishermitian(
+        A::AbstractMat{$PetscScalar};
+        tol = zero($PetscReal),
+    )
         fr = Ref{PetscBool}()
-        @chk ccall((:MatIsHermitian, $libpetsc), PetscErrorCode,
+        @chk ccall(
+            (:MatIsHermitian, $libpetsc),
+            PetscErrorCode,
             (CMat, $PetscReal, Ptr{PetscBool}),
-            A, tol, fr)
+            A,
+            tol,
+            fr,
+        )
         return fr[] == PETSC_TRUE
     end
-    function LinearAlgebra.norm(M::AbstractMat{$PetscScalar}, normtype::NormType=NORM_FROBENIUS)
+    function LinearAlgebra.norm(
+        M::AbstractMat{$PetscScalar},
+        normtype::NormType = NORM_FROBENIUS,
+    )
         r_val = Ref{$PetscReal}()
-        @chk ccall((:MatNorm, $libpetsc), PetscErrorCode, 
+        @chk ccall(
+            (:MatNorm, $libpetsc),
+            PetscErrorCode,
             (CMat, NormType, Ptr{$PetscReal}),
-            M, normtype, r_val)
+            M,
+            normtype,
+            r_val,
+        )
         return r_val[]
     end
-    
-    function LinearAlgebra.mul!(y::AbstractVec{$PetscScalar}, M::AbstractMat{$PetscScalar}, x::AbstractVec{$PetscScalar})
-        @chk ccall((:MatMult, $libpetsc), PetscErrorCode, (CMat, CVec, CVec), M, x, y)
+
+    function LinearAlgebra.mul!(
+        y::AbstractVec{$PetscScalar},
+        M::AbstractMat{$PetscScalar},
+        x::AbstractVec{$PetscScalar},
+    )
+        @chk ccall(
+            (:MatMult, $libpetsc),
+            PetscErrorCode,
+            (CMat, CVec, CVec),
+            M,
+            x,
+            y,
+        )
         return y
     end
-    function LinearAlgebra.mul!(y::AbstractVec{$PetscScalar}, M::Adjoint{T,A}, x::AbstractVec{$PetscScalar}) where {T,A<:AbstractMat{$PetscScalar}}
-        @chk ccall((:MatMultHermitianTranspose, $libpetsc), PetscErrorCode, (CMat, CVec, CVec), parent(M), x, y)
+    function LinearAlgebra.mul!(
+        y::AbstractVec{$PetscScalar},
+        M::Adjoint{T, A},
+        x::AbstractVec{$PetscScalar},
+    ) where {T, A <: AbstractMat{$PetscScalar}}
+        @chk ccall(
+            (:MatMultHermitianTranspose, $libpetsc),
+            PetscErrorCode,
+            (CMat, CVec, CVec),
+            parent(M),
+            x,
+            y,
+        )
         return y
     end
-    function LinearAlgebra.mul!(y::AbstractVec{$PetscScalar}, M::Transpose{T,A}, x::AbstractVec{$PetscScalar}) where {T,A<:AbstractMat{$PetscScalar}}
-        @chk ccall((:MatMultTranspose, $libpetsc), PetscErrorCode, (CMat, CVec, CVec), parent(M), x, y)
+    function LinearAlgebra.mul!(
+        y::AbstractVec{$PetscScalar},
+        M::Transpose{T, A},
+        x::AbstractVec{$PetscScalar},
+    ) where {T, A <: AbstractMat{$PetscScalar}}
+        @chk ccall(
+            (:MatMultTranspose, $libpetsc),
+            PetscErrorCode,
+            (CMat, CVec, CVec),
+            parent(M),
+            x,
+            y,
+        )
         return y
     end
+end
 
-   
-
-end    
-
-function assemble(M::AbstractMat, t::MatAssemblyType=MAT_FINAL_ASSEMBLY)
+function assemble(M::AbstractMat, t::MatAssemblyType = MAT_FINAL_ASSEMBLY)
     assemblybegin(M, t)
     assemblyend(M, t)
 end
 
 function MatSeqAIJ(S::SparseMatrixCSC{T}) where {T}
     PetscInt = inttype(T)
-    m,n = size(S)
-    nnz = zeros(PetscInt,m)
+    m, n = size(S)
+    nnz = zeros(PetscInt, m)
     for r in S.rowval
         nnz[r] += 1
     end
     M = MatSeqAIJ{T}(m, n, nnz)
-    for j = 1:n
-        for ii = S.colptr[j]:S.colptr[j+1]-1
+    for j in 1:n
+        for ii in S.colptr[j]:(S.colptr[j + 1] - 1)
             i = S.rowval[ii]
-            M[i,j] = S.nzval[ii]
+            M[i, j] = S.nzval[ii]
         end
     end
     assemble(M)
@@ -368,13 +555,13 @@ function MatSeqAIJ(S::SparseMatrixCSC{T}) where {T}
 end
 
 function Base.copyto!(M::PETSc.MatSeqAIJ{T}, S::SparseMatrixCSC{T}) where {T}
-    for j = 1:size(S,2)
-        for ii = S.colptr[j]:S.colptr[j+1]-1
+    for j in 1:size(S, 2)
+        for ii in S.colptr[j]:(S.colptr[j + 1] - 1)
             i = S.rowval[ii]
-            M[i,j] = S.nzval[ii]
+            M[i, j] = S.nzval[ii]
         end
     end
-    assemble(M);  
+    assemble(M)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", mat::AbstractMat)
@@ -383,7 +570,14 @@ end
 AbstractMat(A::Matrix) = MatSeqDense(A)
 AbstractMat(A::SparseMatrixCSC) = MatSeqAIJ(A)
 
-const MatAT{T} = Union{AbstractMat{T}, Transpose{T, <:AbstractMat{T}}, Adjoint{T, <:AbstractMat{T}}}
+const MatAT{T} = Union{
+    AbstractMat{T},
+    Transpose{T, <:AbstractMat{T}},
+    Adjoint{T, <:AbstractMat{T}},
+}
 
-LinearAlgebra.mul!(y::AbstractVector{T}, M::MatAT{T}, x::AbstractVector{T}) where {T} =
-    parent(LinearAlgebra.mul!(AbstractVec(y), M, AbstractVec(x)))
+LinearAlgebra.mul!(
+    y::AbstractVector{T},
+    M::MatAT{T},
+    x::AbstractVector{T},
+) where {T} = parent(LinearAlgebra.mul!(AbstractVec(y), M, AbstractVec(x)))

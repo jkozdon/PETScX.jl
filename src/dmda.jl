@@ -125,7 +125,7 @@ function DMDAGetGhostCorners end
         # We can only let the garbage collect finalize when we do not need to
         # worry about MPI (since garbage collection is asyncronous)
         if comm == MPI.COMM_SELF
-          finalizer(destroy, da)
+            finalizer(destroy, da)
         end
         return da
     end
@@ -197,7 +197,7 @@ function DMDAGetGhostCorners end
         # We can only let the garbage collect finalize when we do not need to
         # worry about MPI (since garbage collection is asyncronous)
         if comm == MPI.COMM_SELF
-          finalizer(destroy, da)
+            finalizer(destroy, da)
         end
         return da
     end
@@ -287,7 +287,7 @@ function DMDAGetGhostCorners end
         # We can only let the garbage collect finalize when we do not need to
         # worry about MPI (since garbage collection is asyncronous)
         if comm == MPI.COMM_SELF
-          finalizer(destroy, da)
+            finalizer(destroy, da)
         end
         return da
     end
