@@ -7,7 +7,10 @@ PETSc.initialize()
     comm = MPI.COMM_WORLD
     mpirank = MPI.Comm_rank(comm)
     mpisize = MPI.Comm_size(comm)
-    for (_, ST, RT, IT) in PETSc.libtypes
+    for petsclib in PETSc.petsclibs
+        ST = PETSc.scalartype(petsclib)
+        TT = PETSc.realtype(petsclib)
+        IT = PETSc.inttype(petsclib)
         # Loop over all boundary types and try to use them
         for boundary_type in instances(PETSc.DMBoundaryType)
             @testset "$boundary_type" begin
@@ -112,7 +115,10 @@ end
     mpisize = MPI.Comm_size(comm)
     global_size_x = 100
     global_size_y = 45
-    for (_, ST, RT, IT) in PETSc.libtypes
+    for petsclib in PETSc.petsclibs
+        ST = PETSc.scalartype(petsclib)
+        TT = PETSc.realtype(petsclib)
+        IT = PETSc.inttype(petsclib)
         # Loop over all boundary types and stencil types
         for stencil_type in instances(PETSc.DMDAStencilType),
             boundary_type_y in instances(PETSc.DMBoundaryType),
@@ -214,7 +220,10 @@ end
     global_size_x = 12
     global_size_y = 13
     global_size_z = 14
-    for (_, ST, RT, IT) in PETSc.libtypes
+    for petsclib in PETSc.petsclibs
+        ST = PETSc.scalartype(petsclib)
+        TT = PETSc.realtype(petsclib)
+        IT = PETSc.inttype(petsclib)
         # Loop over all boundary types and stencil types
         for stencil_type in instances(PETSc.DMDAStencilType),
             boundary_type_z in instances(PETSc.DMBoundaryType),
