@@ -2,12 +2,14 @@ module PETScX
 
 using MPI
 
+MPI.Initialized() || MPI.Init()
+
 using Libdl
 
 include("const.jl")
 include("startup.jl")
 include("lib.jl")
-# include("init.jl")
+include("init.jl")
 # include("ref.jl")
 # include("viewer.jl")
 # include("options.jl")

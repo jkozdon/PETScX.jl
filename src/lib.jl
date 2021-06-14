@@ -1,6 +1,5 @@
-
 """
-    PetscLibType{PetscScalar, PetscInt}(libpetsc)
+    PetscLibType{PetscScalar, PetscInt}(petsc_library)
 
 A container for specific PETSc libraries.
 
@@ -8,11 +7,11 @@ All other containers for PETSc objects should be typed on this to ensure that
 dispatch is correct.
 """
 struct PetscLibType{PetscScalar, PetscInt, LibType}
-    libpetsc::LibType
+    petsc_library::LibType
 end
-function PetscLibType{ST, IT}(libpetsc) where {ST, IT}
-    LT = typeof(libpetsc)
-    return PetscLibType{ST, IT, LT}(libpetsc)
+function PetscLibType{ST, IT}(petsc_library) where {ST, IT}
+    LT = typeof(petsc_library)
+    return PetscLibType{ST, IT, LT}(petsc_library)
 end
 
 """
@@ -91,6 +90,9 @@ const petsclibs = map(libs) do lib
         PETSC_INT_SIZE == 8 ? Int64 :
         error("PETSC_INT_SIZE = $PETSC_INT_SIZE not supported.")
 
+    PetscFinalize_ptr = dlsym(libhdl, :PetscFinalize)
+    @chk ccall(PetscFinalize_ptr, PetscErrorCode, ())
+
     # TODO: PetscBLASInt, PetscMPIInt ?
     return PetscLibType{PetscScalar, PetscInt}(lib[1])
 end
@@ -103,12 +105,17 @@ Macro for looping over the available petsc libraries.
 macro for_libpetsc(expr)
     quote
         for petsclib in petsclibs
-            libpetsc = petsclib.libpetsc
+            # String for the library
+            petsc_library = petsclib.petsc_library
+
+            # types we dispatch on
+            PetscLib = typeof(petsclib)
+            UnionPetscLib = Union{PetscLib, Type{PetscLib}}
+
             PetscScalar = scalartype(petsclib)
             PetscReal = realtype(petsclib)
             PetscInt = inttype(petsclib)
-            PetscLib = typeof(petsclib)
-            UnionPetscLib = Union{PetscLib, Type{PetscLib}}
+
             @eval esc($expr)
         end
     end
