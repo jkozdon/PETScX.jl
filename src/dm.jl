@@ -1,7 +1,7 @@
 const CDM = Ptr{Cvoid}
 
 abstract type AbstractDM{T} end
-mutable struct _DM{T} <: AbstractDM{T}
+mutable struct WrappedDM{T} <: AbstractDM{T}
     ptr::CDM
 end
 mutable struct DM{T} <: AbstractDM{T}

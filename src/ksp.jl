@@ -214,7 +214,7 @@ struct Fn_KSPComputeOperators{T} end
             ksp,
             t_dm,
         )
-        dm = _DM{$PetscScalar}(t_dm[])
+        dm = WrappedDM{$PetscScalar}(t_dm[])
         return dm
     end
 
