@@ -1,8 +1,11 @@
 module PETScX
 
-using MPI, LinearAlgebra, SparseArrays
+using MPI
+
+using Libdl
 
 include("const.jl")
+include("startup.jl")
 include("lib.jl")
 # include("init.jl")
 # include("ref.jl")
