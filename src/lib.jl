@@ -123,9 +123,6 @@ const petsclibs = map(libs) do lib
     return PetscLibType{PetscScalar, PetscInt}(lib[1])
 end
 
-const scalar_types = map(x -> scalartype(x), petsclibs)
-@assert length(scalar_types) == length(unique(scalar_types))
-
 macro for_libpetsc(expr)
     quote
         for petsclib in petsclibs
@@ -141,5 +138,16 @@ macro for_libpetsc(expr)
 end
 
 @for_libpetsc begin
-    getpetsclib(::Type{$PetscScalar}, ::Type{$PetscInt}) = $petsclib
+    _getpetsclib(::Type{$PetscScalar}, ::Type{$PetscInt}) = $petsclib
+end
+
+function getpetsclib(PetscScalar = Float64, PetscInt = Int64)
+    try
+        _getpetsclib(PetscScalar, PetscInt)
+    catch
+        error(
+            "No PETSc library loaded for types " *
+            "(PetscScalar, PetscInt) = ($PetscScalar, $PetscInt)",
+        )
+    end
 end

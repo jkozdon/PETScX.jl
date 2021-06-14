@@ -1,6 +1,5 @@
-
 @for_libpetsc begin
-    function initialized(::Type{$PetscScalar})
+    function Initialized(::Type{$PetscScalar})
         r_flag = Ref{PetscBool}()
         @chk ccall(
             (:PetscInitialized, $libpetsc),
@@ -10,7 +9,7 @@
         )
         return r_flag[] == PETSC_TRUE
     end
-    function initialize(::Type{$PetscScalar})
+    function Initialize(::Type{$PetscScalar})
         if !initialized($PetscScalar)
             MPI.Initialized() || MPI.Init()
             @chk ccall(
@@ -26,7 +25,7 @@
         end
         return nothing
     end
-    function finalized(::Type{$PetscScalar})
+    function Finalized(::Type{$PetscScalar})
         r_flag = Ref{PetscBool}()
         @chk ccall(
             (:PetscFinalized, $libpetsc),
@@ -36,7 +35,7 @@
         )
         return r_flag[] == PETSC_TRUE
     end
-    function finalize(::Type{$PetscScalar})
+    function Finalize(::Type{$PetscScalar})
         if !finalized($PetscScalar)
             @chk ccall((:PetscFinalize, $libpetsc), PetscErrorCode, ())
         end
