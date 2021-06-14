@@ -1,6 +1,6 @@
-name = "PETSc"
-uuid = "ace2c81b-2b5f-4b1e-a30d-d662738edfe0"
-authors = ["Simon Byrne <simonbyrne@gmail.com>"]
+name = "PETScX"
+uuid = "ebc543cf-bb16-4060-865c-341ee1944abf"
+authors = ["Jeremy E Kozdon <jekozdon@nps.edu>"]
 version = "0.1.0"
 
 [deps]

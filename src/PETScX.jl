@@ -1,4 +1,4 @@
-module PETSc
+module PETScX
 
 using MPI, LinearAlgebra, SparseArrays
 
