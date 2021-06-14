@@ -51,7 +51,7 @@ function Finalized end
                 (),
             )
 
-            atexit(() -> finalize($petsc_library))
+            atexit(() -> Finalize($PetscLib))
         end
         return nothing
     end
