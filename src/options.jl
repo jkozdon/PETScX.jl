@@ -28,21 +28,36 @@ has no value it should be set to `nothing`
 ```julia-repl
 julia> opt = PETScX.Options(
            petsclib,
-           ksp_monitor = nothing,
-           ksp_view = nothing,
+           ksp_monitor = true,
+           ksp_view = true,
            pc_type = "mg",
            pc_mg_levels = 1,
-       );
+       )
+#PETSc Option Table entries:
+-ksp_monitor true
+-ksp_view true
+-pc_mg_levels 1
+-pc_type mg
+#End of PETSc Option Table entries
+
 
 julia> opt["ksp_monitor"]
-""
+"true"
 
 julia> opt["pc_type"]
 "mg"
 
-julia> opt["bad_opt"]
-ERROR: KeyError: key "bad_opt" not found
+julia> opt["pc_type"] = "ilu"
+"ilu"
+
+julia> opt["pc_type"]
+"ilu"
+
+julia> opt["bad_key"]
+ERROR: KeyError: key "bad_key" not found
 ```
+
+Manual: [`PetscOptionsCreate`](https://petsc.org/release/docs/manualpages/Sys/PetscOptionsCreate.html)
 """
 mutable struct Options{T} <: AbstractOptions{T}
     ptr::CPetscOptions
@@ -136,10 +151,12 @@ end
         return val
     end
 
-    #=
     function view(
         opts::AbstractOptions{$PetscLib},
-        viewer::Viewer{$PetscLib} = ViewerStdout{$PetscLib}(MPI.COMM_SELF),
+        viewer::AbstractViewer{$PetscLib} = ViewerStdout(
+            $PetscLib,
+            MPI.COMM_SELF,
+        ),
     )
         @chk ccall(
             (:PetscOptionsView, $petsc_library),
@@ -150,16 +167,17 @@ end
         )
         return nothing
     end
-    =#
+
+    GlobalOptions(::$UnionPetscLib) = GlobalOptions{$PetscLib}()
 end
 
 Base.show(io::IO, opts::AbstractOptions) = _show(io, opts)
 
-#=
 """
     with(f, opts::Options)
 
-Call `f()` with the [`Options`](@ref) `opts` set temporarily (in addition to any global options).
+Call `f()` with the [`Options`](@ref) `opts` set temporarily (in addition to any
+global options).
 """
 function with(f, opts::Options{T}) where {T}
     global_opts = GlobalOptions{T}()
@@ -170,4 +188,3 @@ function with(f, opts::Options{T}) where {T}
         pop!(global_opts)
     end
 end
-=#
