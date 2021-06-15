@@ -1,6 +1,6 @@
 # AbstractVec
 #   - VecSeq: wrap
-#   - VecMPI (TODO)
+#   - VecMPI
 #   - VecGhost (TODO)
 # for the MPI variants we won't be able to attach finalizers, as destroy needs
 # to be called collectively.
@@ -59,18 +59,94 @@ end
             jl_v,
             petsc_v,
         )
-        finalizer(destroy, petsc_v)
+        return petsc_v
+    end
+end
+
+"""
+    VecMPI(petsclib, comm, v::Vector)
+    VecMPI(petsclib, comm, local_length::Int, global_length::Int = -1)
+
+An MPI distributed vectors without ghost elements.
+
+If `v` is given then this is taken to be the mpi rank local values of the array
+and the local size is determined from `length(v)`.
+
+If `local_length ≥ 0` then this is taken to be the local length of the vector.
+
+If `local_length ≤ 0` then PETSc will decide on the partitioning based on
+`global_length`.
+
+Manual: [`VecCreateMPI`](https://petsc.org/release/docs/manualpages/Vec/VecCreateMPI.html)
+Manual: [`VecCreateMPIWithArray`](https://petsc.org/release/docs/manualpages/Vec/VecCreateMPIWithArray.html)
+
+!!! warning
+    If `V` is specified, then the array `v` is reused as the storage and should
+    not be `resize!`-ed or otherwise have its length modified while the PETSc
+    object exists.
+
+!!! note
+    The user is responsible for calling `destroy(vec)` on the `VecMPI` since
+    this cannot be handled by the garbage collector do to the MPI nature of the
+    object.
+"""
+mutable struct VecMPI{T, PetscLib <: PetscLibType{T}} <:
+               AbstractVec{T, PetscLib}
+    ptr::CVec
+    comm::MPI.Comm
+    array::Union{Nothing, Vector{T}}
+end
+@for_libpetsc begin
+    function VecMPI(
+        ::$UnionPetscLib,
+        comm,
+        jl_v::Vector{$PetscScalar};
+        blocksize = 1,
+        global_length = -1,
+    )
+        global_length > 0 || (global_length = PETSC_DETERMINE)
+        @assert Initialized($PetscLib)
+        petsc_v = VecMPI{$PetscScalar, $PetscLib}(C_NULL, comm, jl_v)
+        @chk ccall(
+            (:VecCreateMPIWithArray, $petsc_library),
+            PetscErrorCode,
+            (
+                MPI.MPI_Comm,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                Ptr{$PetscScalar},
+                Ptr{CVec},
+            ),
+            comm,
+            blocksize,
+            length(jl_v),
+            global_length,
+            jl_v,
+            petsc_v,
+        )
         return petsc_v
     end
 
-    function destroy(petsc_v::AbstractVec{$PetscScalar, $PetscLib})
-        Finalized($PetscLib) || @chk ccall(
-            (:VecDestroy, $petsc_library),
+    function VecMPI(::$UnionPetscLib, comm, local_length, global_length = -1)
+        global_length > 0 || (global_length = PETSC_DETERMINE)
+        local_length > 0 || (local_length = PETSC_DECIDE)
+
+        @assert (global_length > 0) || (local_length > 0)
+
+        @assert Initialized($PetscLib)
+
+        petsc_v = VecMPI{$PetscScalar, $PetscLib}(C_NULL, comm, nothing)
+        @chk ccall(
+            (:VecCreateMPI, $petsc_library),
             PetscErrorCode,
-            (Ptr{CVec},),
+            (MPI.MPI_Comm, $PetscInt, $PetscInt, Ptr{CVec}),
+            comm,
+            local_length,
+            global_length,
             petsc_v,
         )
-        return nothing
+        return petsc_v
     end
 end
 
@@ -131,6 +207,16 @@ setvalueslocal!(::AbstractVec)
 
 # Functions for AbstractVec types
 @for_libpetsc begin
+    function destroy(petsc_v::AbstractVec{$PetscScalar, $PetscLib})
+        Finalized($PetscLib) || @chk ccall(
+            (:VecDestroy, $petsc_library),
+            PetscErrorCode,
+            (Ptr{CVec},),
+            petsc_v,
+        )
+        return nothing
+    end
+
     function Base.length(v::AbstractVec{$PetscScalar, $PetscLib})
         r_sz = Ref{$PetscInt}()
         @chk ccall(
@@ -295,7 +381,6 @@ setvalueslocal!(::AbstractVec)
         return nothing
     end
 
-    #=
     function ownershiprange(vec::AbstractVec{$PetscScalar})
         r_lo = Ref{$PetscInt}()
         r_hi = Ref{$PetscInt}()
@@ -307,9 +392,10 @@ setvalueslocal!(::AbstractVec)
             r_lo,
             r_hi,
         )
-        r_lo[]:(r_hi[] - $PetscInt(1))
+        return r_lo[]:(r_hi[] - $PetscInt(1))
     end
 
+    #=
     function unsafe_localarray(
         ::Type{$PetscScalar},
         cv::CVec;

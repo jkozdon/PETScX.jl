@@ -1,6 +1,7 @@
 using Test
 using PETScX
 using LinearAlgebra: norm
+using MPI: mpiexec
 
 @testset "vec tests" begin
     for petsclib in PETScX.petsclibs
