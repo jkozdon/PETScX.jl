@@ -49,6 +49,7 @@ const PetscLogDouble = Cdouble
     NORM_INFINITY = 3
     NORM_1_AND_2 = 4
 end
+const NORM_MAX = NORM_INFINITY
 
 @enum MatAssemblyType MAT_FLUSH_ASSEMBLY = 1 MAT_FINAL_ASSEMBLY = 0
 
