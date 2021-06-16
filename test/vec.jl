@@ -10,7 +10,7 @@ using MPI: mpiexec
         PetscInt = PETScX.inttype(petsclib)
 
         julia_x = [PetscScalar(i) for i in 1:10]
-        petsc_x = PETScX.VecSeq(petsclib, julia_x)
+        petsc_x = PETScX.Vec(petsclib, julia_x)
 
         # Check the basics
         @test length(petsc_x) == length(julia_x)

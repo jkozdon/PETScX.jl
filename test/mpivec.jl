@@ -30,7 +30,7 @@ MPI.Initialized() || MPI.Init()
         # Test creation from array
         julia_x = PetscScalar.(n0:n1)
 
-        petsc_x = PETScX.VecMPI(petsclib, comm, julia_x)
+        petsc_x = PETScX.Vec(petsclib, comm, julia_x)
 
         @test length(petsc_x) == exact_length
 
@@ -40,7 +40,7 @@ MPI.Initialized() || MPI.Init()
         PETScX.destroy(petsc_x)
 
         # Test creation from local size
-        petsc_x = PETScX.VecMPI(petsclib, comm, n1 - n0 + 1)
+        petsc_x = PETScX.Vec(petsclib, comm, n1 - n0 + 1)
 
         vals = PetscScalar.(n0:n1)
         inds = PetscInt.((n0:n1) .- 10)
@@ -54,7 +54,12 @@ MPI.Initialized() || MPI.Init()
         PETScX.destroy(petsc_x)
 
         # Test creation from global size
-        petsc_x = PETScX.VecMPI(petsclib, comm, -1, exact_length)
+        petsc_x = PETScX.Vec(
+            petsclib,
+            comm,
+            PETScX.PETSC_DECIDE;
+            global_length = exact_length,
+        )
 
         inds = PetscInt.(PETScX.ownershiprange(petsc_x))
         vals = PetscScalar.(10 .+ inds)

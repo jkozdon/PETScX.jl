@@ -1,6 +1,4 @@
 # AbstractVec
-#   - VecSeq: wrap
-#   - VecMPI
 #   - VecGhost (TODO)
 # for the MPI variants we won't be able to attach finalizers, as destroy needs
 # to be called collectively.
@@ -22,14 +20,73 @@ Base.size(v::AbstractVec) = (length(v),)
 Base.parent(v::AbstractVec) = v.array
 
 # allows us to pass XXVec objects directly into CVec ccall signatures
-Base.cconvert(::Type{CVec}, obj::AbstractVec) = obj.ptr
+Base.cconvert(::Type{CVec}, obj::AbstractVec) = obj.__ptr__
 
 # allows us to pass XXVec objects directly into Ptr{CVec} ccall signatures
 Base.unsafe_convert(::Type{Ptr{CVec}}, obj::AbstractVec) =
     convert(Ptr{CVec}, pointer_from_objref(obj))
 
+mutable struct Vec{
+    T,
+    PetscLib <: PetscLibType{T},
+    AT <: Union{Vector{T}, Nothing},
+    CT <: Union{MPI.Comm, Nothing},
+} <: AbstractVec{T, PetscLib}
+    __ptr__::CVec
+    __possible_array_ref__::AT
+    __possible_comm_ref::CT
+    function Vec{T, PetscLib}(;
+        array::AT = nothing,
+        comm::CT = nothing,
+    ) where {PetscLib, T, AT, CT}
+        new{T, PetscLib, AT, CT}(C_NULL, array, comm)
+    end
+end
+
+@for_libpetsc begin
+    function view(
+        vec::AbstractVec{$PetscScalar, $PetscLib},
+        viewer::AbstractViewer{$PetscLib} = ViewerStdout($PetscLib),
+    )
+        @chk ccall(
+            (:VecView, $petsc_library),
+            PetscErrorCode,
+            (CVec, CPetscViewer),
+            vec,
+            viewer,
+        )
+        return nothing
+    end
+end
+Base.show(io::IO, v::AbstractVec) = _show(io, v)
+
 """
-    VecSeq(petsclib, v::Vector)
+    destroy(v::AbstractVec)
+
+Destroy the PETSc vector `v`
+
+Manual: [`VecDestroy`](https://petsc.org/release/docs/manualpages/Vec/VecDestroy.html)
+"""
+destroy(::AbstractVec)
+
+@for_libpetsc begin
+    function destroy(petsc_v::AbstractVec{$PetscScalar, $PetscLib})
+        Finalized($PetscLib) || @chk ccall(
+            (:VecDestroy, $petsc_library),
+            PetscErrorCode,
+            (Ptr{CVec},),
+            petsc_v,
+        )
+
+        # Zero the pointer so that if VecDestroy gets called multiple times we
+        # do not artificially decrease the internal petsc ref counter
+        petsc_v.__ptr__ = C_NULL
+        return nothing
+    end
+end
+
+"""
+    Vec(petsclib, v::Vector; blocksize = 1, local_length = length(v))
 
 A standard, sequentially-stored serial PETSc vector, wrapping the Julia vector
 `v`.
@@ -39,74 +96,77 @@ Manual: [`VecCreateSeqWithArray`](https://petsc.org/release/docs/manualpages/Vec
 !!! warning
     This reuses the array `v` as storage, and so `v` should not be `resize!`-ed
     or otherwise have its length modified while the PETSc object exists.
+
+!!! note
+    Since the `Vec` is inherently serial `destroy` will be called by the garbage
+    collector
 """
-mutable struct VecSeq{T, PetscLib <: PetscLibType{T}} <:
-               AbstractVec{T, PetscLib}
-    ptr::CVec
-    array::Vector{T}
-end
+Vec(_, ::Vector)
+
 @for_libpetsc begin
-    function VecSeq(::$UnionPetscLib, jl_v::Vector{$PetscScalar}; blocksize = 1)
+    function Vec(
+        ::$UnionPetscLib,
+        jl_v::Vector{$PetscScalar};
+        blocksize = 1,
+        local_length = length(jl_v),
+    )
         @assert Initialized($PetscLib)
-        petsc_v = VecSeq{$PetscScalar, $PetscLib}(C_NULL, jl_v)
+        AT = typeof(jl_v)
+        petsc_v = Vec{$PetscScalar, $PetscLib}(array = jl_v)
         @chk ccall(
             (:VecCreateSeqWithArray, $petsc_library),
             PetscErrorCode,
             (MPI.MPI_Comm, $PetscInt, $PetscInt, Ptr{$PetscScalar}, Ptr{CVec}),
             MPI.COMM_SELF,
             blocksize,
-            length(jl_v),
+            local_length,
             jl_v,
             petsc_v,
         )
+
+        finalizer(destroy, petsc_v)
         return petsc_v
     end
 end
 
 """
-    VecMPI(petsclib, comm, v::Vector)
-    VecMPI(petsclib, comm, local_length::Int, global_length::Int = -1)
+    Vec(
+        petsclib,
+        comm,
+        v::Vector;
+        blocksize = 1,
+        local_length = length(v),
+        global_length = PETSC_DETERMINE
+    )
 
-An MPI distributed vectors without ghost elements.
+Create An MPI distributed vectors without ghost elements using the vector `v`
+for storage.
 
-If `v` is given then this is taken to be the mpi rank local values of the array
-and the local size is determined from `length(v)`.
-
-If `local_length ≥ 0` then this is taken to be the local length of the vector.
-
-If `local_length ≤ 0` then PETSc will decide on the partitioning based on
-`global_length`.
-
-Manual: [`VecCreateMPI`](https://petsc.org/release/docs/manualpages/Vec/VecCreateMPI.html)
 Manual: [`VecCreateMPIWithArray`](https://petsc.org/release/docs/manualpages/Vec/VecCreateMPIWithArray.html)
 
 !!! warning
-    If `V` is specified, then the array `v` is reused as the storage and should
-    not be `resize!`-ed or otherwise have its length modified while the PETSc
-    object exists.
+    The array `v` is reused as the storage and should not be `resize!`-ed or
+    otherwise have its length modified while the PETSc object exists.
 
 !!! note
-    The user is responsible for calling `destroy(vec)` on the `VecMPI` since
+    The user is responsible for calling `destroy(vec)` on the `Vec` since
     this cannot be handled by the garbage collector do to the MPI nature of the
     object.
 """
-mutable struct VecMPI{T, PetscLib <: PetscLibType{T}} <:
-               AbstractVec{T, PetscLib}
-    ptr::CVec
-    comm::MPI.Comm
-    array::Union{Nothing, Vector{T}}
-end
+Vec(_, ::MPI.Comm, ::Vector)
+
 @for_libpetsc begin
-    function VecMPI(
+    function Vec(
         ::$UnionPetscLib,
         comm,
         jl_v::Vector{$PetscScalar};
         blocksize = 1,
-        global_length = -1,
+        global_length = PETSC_DETERMINE,
+        local_length = length(jl_v),
     )
         global_length > 0 || (global_length = PETSC_DETERMINE)
         @assert Initialized($PetscLib)
-        petsc_v = VecMPI{$PetscScalar, $PetscLib}(C_NULL, comm, jl_v)
+        petsc_v = Vec{$PetscScalar, $PetscLib}(comm = comm, array = jl_v)
         @chk ccall(
             (:VecCreateMPIWithArray, $petsc_library),
             PetscErrorCode,
@@ -120,23 +180,48 @@ end
             ),
             comm,
             blocksize,
-            length(jl_v),
+            local_length,
             global_length,
             jl_v,
             petsc_v,
         )
         return petsc_v
     end
+end
 
-    function VecMPI(::$UnionPetscLib, comm, local_length, global_length = -1)
-        global_length > 0 || (global_length = PETSC_DETERMINE)
-        local_length > 0 || (local_length = PETSC_DECIDE)
+"""
+    Vec(petsclib, comm, local_length::Int; global_length::Int = PETSC_DETERMINE)
 
+An MPI distributed vectors without ghost elements with `local_length` and
+`global_length`.
+
+If `global_length == PETSC_DETERMINE` then the global length is determined by
+PETSc.
+
+If `local_length == PETSC_DECIDE` then the local length on each MPI rank is
+determined by PETSc.
+
+Manual: [`VecCreateMPI`](https://petsc.org/release/docs/manualpages/Vec/VecCreateMPI.html)
+
+!!! note
+    The user is responsible for calling `destroy(vec)` on the `Vec` since
+    this cannot be handled by the garbage collector do to the MPI nature of the
+    object.
+"""
+Vec(_, ::MPI.Comm, ::Int, ::Int)
+
+@for_libpetsc begin
+    function Vec(
+        ::$UnionPetscLib,
+        comm,
+        local_length;
+        global_length = PETSC_DETERMINE,
+    )
         @assert (global_length > 0) || (local_length > 0)
 
         @assert Initialized($PetscLib)
 
-        petsc_v = VecMPI{$PetscScalar, $PetscLib}(C_NULL, comm, nothing)
+        petsc_v = Vec{$PetscScalar, $PetscLib}(comm = comm)
         @chk ccall(
             (:VecCreateMPI, $petsc_library),
             PetscErrorCode,
@@ -147,6 +232,37 @@ end
             petsc_v,
         )
         return petsc_v
+    end
+end
+
+"""
+    ownershiprange(vec::AbstractVec)
+
+The range of global indices owned by this MPI rank, assuming that the vectors
+are laid out with the first `n1` elements on the first processor, next `n2`
+elements on the second, etc. For certain parallel layouts this range may not be
+well defined.
+
+Manual: [`VecGetOwnershipRange`](https://petsc.org/release/docs/manualpages/Vec/VecGetOwnershipRange.html)
+
+!!! note
+    The range returned is inclusive (`idx_first:idx_last`)
+"""
+ownershiprange
+
+@for_libpetsc begin
+    function ownershiprange(vec::AbstractVec{$PetscScalar})
+        r_lo = Ref{$PetscInt}()
+        r_hi = Ref{$PetscInt}()
+        @chk ccall(
+            (:VecGetOwnershipRange, $petsc_library),
+            PetscErrorCode,
+            (CVec, Ptr{$PetscInt}, Ptr{$PetscInt}),
+            vec,
+            r_lo,
+            r_hi,
+        )
+        return r_lo[]:(r_hi[] - $PetscInt(1))
     end
 end
 
@@ -168,6 +284,28 @@ Manual: [`VecSetValues`](https://petsc.org/release/docs/manualpages/Vec/VecSetVa
 """
 setvalues!(::AbstractVec)
 
+@for_libpetsc begin
+    function setvalues!(
+        v::AbstractVec{$PetscScalar, $PetscLib},
+        idxs0::Vector{$PetscInt},
+        vals::Array{$PetscScalar},
+        insertmode::InsertMode,
+    )
+        @assert length(vals) >= length(idxs0)
+        @chk ccall(
+            (:VecSetValues, $petsc_library),
+            PetscErrorCode,
+            (CVec, $PetscInt, Ptr{$PetscInt}, Ptr{$PetscScalar}, InsertMode),
+            v,
+            length(idxs0),
+            idxs0,
+            vals,
+            insertmode,
+        )
+        return nothing
+    end
+end
+
 """
     getvalues!(
         vals::Array{PetscScalar},
@@ -184,6 +322,26 @@ Get the 0-based global `indices` of `vec` into the preallocated array `vals`.
 Manual: [`VecGetValues`](https://petsc.org/release/docs/manualpages/Vec/VecGetValues.html)
 """
 getvalues(::AbstractVec)
+
+@for_libpetsc begin
+    function getvalues!(
+        vals::Array{$PetscScalar},
+        v::AbstractVec{$PetscScalar, $PetscLib},
+        idxs0::Vector{$PetscInt},
+    )
+        @assert length(vals) >= length(idxs0)
+        @chk ccall(
+            (:VecGetValues, $petsc_library),
+            PetscErrorCode,
+            (CVec, $PetscInt, Ptr{$PetscInt}, Ptr{$PetscScalar}),
+            v,
+            length(idxs0),
+            idxs0,
+            vals,
+        )
+        return vals
+    end
+end
 
 #=
 """
@@ -203,32 +361,40 @@ can be `INSERT_VALUES` or `ADD_VALUES`.
 Manual: [`VecSetValuesLocal`]( https://petsc.org/release/docs/manualpages/Vec/VecSetValuesLocal.html)
 """
 setvalueslocal!(::AbstractVec)
-=#
 
-# Functions for AbstractVec types
 @for_libpetsc begin
-    function destroy(petsc_v::AbstractVec{$PetscScalar, $PetscLib})
-        Finalized($PetscLib) || @chk ccall(
-            (:VecDestroy, $petsc_library),
+    TODO: need more to allow this
+    function setvalueslocal!(
+        v::AbstractVec{$PetscScalar, $PetscLib},
+        idxs0::Vector{$PetscInt},
+        vals::Array{$PetscScalar},
+        insertmode::InsertMode,
+    )
+        @assert length(vals) >= length(idxs0)
+        @chk ccall(
+            (:VecSetValuesLocal, $petsc_library),
             PetscErrorCode,
-            (Ptr{CVec},),
-            petsc_v,
+            (
+                CVec,
+                $PetscInt,
+                Ptr{$PetscInt},
+                Ptr{$PetscScalar},
+                InsertMode,
+            ),
+            v,
+            length(idxs0),
+            idxs0,
+            vals,
+            insertmode,
         )
         return nothing
     end
+end
+=#
 
-    function Base.length(v::AbstractVec{$PetscScalar, $PetscLib})
-        r_sz = Ref{$PetscInt}()
-        @chk ccall(
-            (:VecGetSize, $petsc_library),
-            PetscErrorCode,
-            (CVec, Ptr{$PetscInt}),
-            v,
-            r_sz,
-        )
-        return r_sz[]
-    end
-
+# `LinearAlgebra` pirated functions for AbstractVec
+# - norm
+@for_libpetsc begin
     function LinearAlgebra.norm(
         v::AbstractVec{$PetscScalar, $PetscLib},
         normtype::NormType = NORM_2,
@@ -246,19 +412,23 @@ setvalueslocal!(::AbstractVec)
         )
         return r_val[]
     end
+end
 
-    function view(
-        vec::AbstractVec{$PetscScalar, $PetscLib},
-        viewer::AbstractViewer{$PetscLib} = ViewerStdout($PetscLib),
-    )
+# `Base` pirated functions for AbstractVec
+# - length
+# - setindex!
+# - getindex
+@for_libpetsc begin
+    function Base.length(v::AbstractVec{$PetscScalar, $PetscLib})
+        r_sz = Ref{$PetscInt}()
         @chk ccall(
-            (:VecView, $petsc_library),
+            (:VecGetSize, $petsc_library),
             PetscErrorCode,
-            (CVec, CPetscViewer),
-            vec,
-            viewer,
+            (CVec, Ptr{$PetscInt}),
+            v,
+            r_sz,
         )
-        return nothing
+        return r_sz[]
     end
 
     function Base.setindex!(
@@ -294,74 +464,9 @@ setvalueslocal!(::AbstractVec)
 
         return vals[1]
     end
+end
 
-    function setvalues!(
-        v::AbstractVec{$PetscScalar, $PetscLib},
-        idxs0::Vector{$PetscInt},
-        vals::Array{$PetscScalar},
-        insertmode::InsertMode,
-    )
-        @assert length(vals) >= length(idxs0)
-        @chk ccall(
-            (:VecSetValues, $petsc_library),
-            PetscErrorCode,
-            (CVec, $PetscInt, Ptr{$PetscInt}, Ptr{$PetscScalar}, InsertMode),
-            v,
-            length(idxs0),
-            idxs0,
-            vals,
-            insertmode,
-        )
-        return nothing
-    end
-
-    function getvalues!(
-        vals::Array{$PetscScalar},
-        v::AbstractVec{$PetscScalar, $PetscLib},
-        idxs0::Vector{$PetscInt},
-    )
-        @assert length(vals) >= length(idxs0)
-        @chk ccall(
-            (:VecGetValues, $petsc_library),
-            PetscErrorCode,
-            (CVec, $PetscInt, Ptr{$PetscInt}, Ptr{$PetscScalar}),
-            v,
-            length(idxs0),
-            idxs0,
-            vals,
-        )
-        return vals
-    end
-
-    #=
-    TODO: need more to allow this
-    function setvalueslocal!(
-        v::AbstractVec{$PetscScalar, $PetscLib},
-        idxs0::Vector{$PetscInt},
-        vals::Array{$PetscScalar},
-        insertmode::InsertMode,
-    )
-        @assert length(vals) >= length(idxs0)
-        @chk ccall(
-            (:VecSetValuesLocal, $petsc_library),
-            PetscErrorCode,
-            (
-                CVec,
-                $PetscInt,
-                Ptr{$PetscInt},
-                Ptr{$PetscScalar},
-                InsertMode,
-            ),
-            v,
-            length(idxs0),
-            idxs0,
-            vals,
-            insertmode,
-        )
-        return nothing
-    end
-    =#
-
+#=
     function assemblybegin(V::AbstractVec{$PetscScalar})
         @chk ccall(
             (:VecAssemblyBegin, $petsc_library),
@@ -381,21 +486,6 @@ setvalueslocal!(::AbstractVec)
         return nothing
     end
 
-    function ownershiprange(vec::AbstractVec{$PetscScalar})
-        r_lo = Ref{$PetscInt}()
-        r_hi = Ref{$PetscInt}()
-        @chk ccall(
-            (:VecGetOwnershipRange, $petsc_library),
-            PetscErrorCode,
-            (CVec, Ptr{$PetscInt}, Ptr{$PetscInt}),
-            vec,
-            r_lo,
-            r_hi,
-        )
-        return r_lo[]:(r_hi[] - $PetscInt(1))
-    end
-
-    #=
     function unsafe_localarray(
         ::Type{$PetscScalar},
         cv::CVec;
@@ -478,11 +568,7 @@ setvalueslocal!(::AbstractVec)
         end
         return v
     end
-    =#
-end
-Base.show(io::IO, v::AbstractVec) = _show(io, v)
 
-#=
 """
     unsafe_localarray(PetscScalar, ptr:CVec; read=true, write=true)
     unsafe_localarray(ptr:AbstractVec; read=true, write=true)
@@ -520,22 +606,4 @@ function map_unsafe_localarray!(f!, v::AbstractVec{T}; kwargs...) where {T}
     f!(array)
     Base.finalize(array)
 end
-
-function Base.show(io::IO, ::MIME"text/plain", vec::AbstractVec)
-    _show(io, vec)
-end
-
-VecSeq(X::Vector{T}; kwargs...) where {T} = VecSeq(MPI.COMM_SELF, X; kwargs...)
-AbstractVec(X::AbstractVector) = VecSeq(X)
-
-"""
-    ownership_range(vec::AbstractVec)
-
-The range of indices owned by this processor, assuming that the vectors are laid out with the first n1 elements on the first processor, next n2 elements on the second, etc. For certain parallel layouts this range may not be well defined.
-
-Note: unlike the C function, the range returned is inclusive (`idx_first:idx_last`)
-
-https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/Vec/VecGetOwnershipRange.html
-"""
-ownershiprange
 =#
