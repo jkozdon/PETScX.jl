@@ -111,7 +111,6 @@ Vec(_, ::Vector)
         local_length = length(jl_v),
     )
         @assert Initialized($PetscLib)
-        AT = typeof(jl_v)
         petsc_v = Vec{$PetscScalar, $PetscLib}(array = jl_v)
         @chk ccall(
             (:VecCreateSeqWithArray, $petsc_library),
@@ -158,7 +157,7 @@ Vec(_, ::MPI.Comm, ::Vector)
 @for_libpetsc begin
     function Vec(
         ::$UnionPetscLib,
-        comm,
+        comm::MPI.Comm,
         jl_v::Vector{$PetscScalar};
         blocksize = 1,
         global_length = PETSC_DETERMINE,
@@ -190,7 +189,12 @@ Vec(_, ::MPI.Comm, ::Vector)
 end
 
 """
-    Vec(petsclib, comm, local_length::Int; global_length::Int = PETSC_DETERMINE)
+    Vec(
+        petsclib,
+        comm,
+        local_length::Integer;
+        global_length::Integer = PETSC_DETERMINE,
+    )
 
 An MPI distributed vectors without ghost elements with `local_length` and
 `global_length`.
@@ -208,12 +212,12 @@ Manual: [`VecCreateMPI`](https://petsc.org/release/docs/manualpages/Vec/VecCreat
     this cannot be handled by the garbage collector do to the MPI nature of the
     object.
 """
-Vec(_, ::MPI.Comm, ::Int, ::Int)
+Vec(_, ::MPI.Comm, ::Integer)
 
 @for_libpetsc begin
     function Vec(
         ::$UnionPetscLib,
-        comm,
+        comm::MPI.Comm,
         local_length;
         global_length = PETSC_DETERMINE,
     )
@@ -229,6 +233,143 @@ Vec(_, ::MPI.Comm, ::Int, ::Int)
             comm,
             local_length,
             global_length,
+            petsc_v,
+        )
+        return petsc_v
+    end
+end
+
+"""
+    Vec(
+        petsclib,
+        comm,
+        local_length::Integer,
+        ghost::Vector{PetscInt};
+        num_ghost::Integer = length(ghost),
+        global_length::Integer = PETSC_DETERMINE,
+    )
+
+
+An MPI distributed vectors with ghost elements with `local_length` and
+`global_length`. The global indices of the ghost element are determined by the
+`ghost` vector.
+
+If `global_length == PETSC_DETERMINE` then the global length is determined by
+PETSc.
+
+If `local_length == PETSC_DECIDE` then the local length on each MPI rank is
+determined by PETSc.
+
+Manual: [`VecCreateGhost`](https://petsc.org/release/docs/manualpages/Vec/VecCreateGhost.html)
+
+!!! note
+    The user is responsible for calling `destroy(vec)` on the `Vec` since
+    this cannot be handled by the garbage collector do to the MPI nature of the
+    object.
+"""
+Vec(_, ::MPI.Comm, ::Integer, ::Vector)
+
+@for_libpetsc begin
+    function Vec(
+        ::$UnionPetscLib,
+        comm::MPI.Comm,
+        local_length,
+        ghost::Vector{$PetscInt};
+        num_ghost = length(ghost),
+        global_length = PETSC_DETERMINE,
+    )
+        @assert (global_length > 0) || (local_length > 0)
+
+        @assert Initialized($PetscLib)
+
+        petsc_v = Vec{$PetscScalar, $PetscLib}(comm = comm)
+        @chk ccall(
+            (:VecCreateGhost, $petsc_library),
+            PetscErrorCode,
+            (
+                MPI.MPI_Comm,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                Ptr{$PetscInt},
+                Ptr{CVec},
+            ),
+            comm,
+            local_length,
+            global_length,
+            num_ghost,
+            ghost,
+            petsc_v,
+        )
+        return petsc_v
+    end
+end
+
+"""
+    Vec(
+        petsclib,
+        comm,
+        v::Vector{PetscScalar};
+        ghost::Vector{PetscInt};
+        local_length::Integer = length(v) - length(ghost),
+        num_ghost::Integer = length(ghost),
+        global_length::Integer = PETSC_DETERMINE,
+    )
+
+
+An MPI distributed vectors with ghost elements using the vector `v` for local
+and ghost storage. The global indices of the ghost element are determined by the
+`ghost` vector.
+
+If `global_length == PETSC_DETERMINE` then the global length is determined by
+PETSc.
+
+Manual: [`VecCreateGhostWithArray`](https://petsc.org/release/docs/manualpages/Vec/VecCreateGhostWithArray.html)
+
+!!! warning
+    The array `v` is reused as the storage and should not be `resize!`-ed or
+    otherwise have its length modified while the PETSc object exists.
+
+!!! note
+    The user is responsible for calling `destroy(vec)` on the `Vec` since
+    this cannot be handled by the garbage collector do to the MPI nature of the
+    object.
+"""
+Vec(_, ::MPI.Comm, ::Integer, ::Vector)
+
+@for_libpetsc begin
+    function Vec(
+        ::$UnionPetscLib,
+        comm::MPI.Comm,
+        jl_v::Vector{$PetscScalar},
+        ghost::Vector{$PetscInt};
+        local_length = length(jl_v) - length(ghost),
+        num_ghost = length(ghost),
+        global_length = PETSC_DETERMINE,
+    )
+        @assert local_length + num_ghost <= length(jl_v)
+
+        @assert Initialized($PetscLib)
+
+        petsc_v = Vec{$PetscScalar, $PetscLib}(comm = comm, array = jl_v)
+        @chk ccall(
+            (:VecCreateGhostWithArray, $petsc_library),
+            PetscErrorCode,
+            (
+                MPI.MPI_Comm,
+                $PetscInt,
+                $PetscInt,
+                $PetscInt,
+                Ptr{$PetscInt},
+                Ptr{$PetscScalar},
+                Ptr{CVec},
+            ),
+            comm,
+            local_length,
+            global_length,
+            num_ghost,
+            ghost,
+            jl_v,
             petsc_v,
         )
         return petsc_v
@@ -311,13 +452,15 @@ end
         vals::Array{PetscScalar},
         v::AbstractVec{PetscScalar, PetscLib},
         indices::Vector{PetscInt},
-        insertmode::InsertMode,
     )
 
 Get the 0-based global `indices` of `vec` into the preallocated array `vals`.
 
 !!! warning
     This function uses 0-based indexing!
+
+!!! note
+    Can only access local values (not ghost values)
 
 Manual: [`VecGetValues`](https://petsc.org/release/docs/manualpages/Vec/VecGetValues.html)
 """
@@ -391,6 +534,67 @@ setvalueslocal!(::AbstractVec)
     end
 end
 =#
+
+"""
+    LocalVec(vec::AbstractVec)
+
+Obtains the local ghosted representation of a [`Vec`](@ref).
+
+!!! note
+    When done with the object the user should call [`restorelocalform!`](@ref)
+
+Manual: [`VecGhostGetLocalForm`](https://petsc.org/release/docs/manualpages/Vec/VecGhostGetLocalForm.html)
+"""
+LocalVec
+
+"""
+    restorelocalform!(local_vec::LocalVec)
+
+Restore the `local_vec` to the associated global vector after a call to
+[`getlocalform`](@ref).
+
+Manual: [`VecGhostRestoreLocalForm`](https://petsc.org/release/docs/manualpages/Vec/VecGhostRestoreLocalForm.html)
+"""
+restorelocalform!
+
+mutable struct LocalVec{
+    T,
+    PetscLib <: PetscLibType{T},
+    GVec <: AbstractVec{T, PetscLib},
+} <: AbstractVec{T, PetscLib}
+    __ptr__::CVec
+    __global_vec__::GVec
+    function LocalVec{PetscLib}(gvec::GVec) where {PetscLib, GVec}
+        PetscScalar = scalartype(PetscLib)
+        new{PetscScalar, PetscLib, GVec}(C_NULL, gvec)
+    end
+end
+
+@for_libpetsc begin
+    function getlocalform(gvec::AbstractVec{$PetscScalar, $PetscLib})
+        lvec = LocalVec{$PetscLib}(gvec)
+        @chk ccall(
+            (:VecGhostGetLocalForm, $petsc_library),
+            PetscErrorCode,
+            (CVec, Ptr{CVec}),
+            gvec,
+            lvec,
+        )
+        return lvec
+    end
+
+    function restorelocalform!(lvec::LocalVec{$PetscScalar, $PetscLib})
+        @chk ccall(
+            (:VecGhostRestoreLocalForm, $petsc_library),
+            PetscErrorCode,
+            (CVec, Ptr{CVec}),
+            lvec.__global_vec__,
+            lvec,
+        )
+        lvec.__ptr__ = C_NULL
+        return lvec.__global_vec__
+    end
+end
 
 # `LinearAlgebra` pirated functions for AbstractVec
 # - norm
@@ -466,26 +670,107 @@ end
     end
 end
 
-#=
-    function assemblybegin(V::AbstractVec{$PetscScalar})
+"""
+    assemblybegin!(vec::AbstractVec)
+
+Begin assembling `vec`
+
+Manual: [`VecAssemblyBegin`](https://petsc.org/release/docs/manualpages/Vec/VecAssemblyBegin.html)
+"""
+assemblybegin!(::AbstractVec)
+
+"""
+    assemblyend!(vec::AbstractVec)
+
+Finish assembling `vec`
+
+Manual: [`VecAssemblyEnd`](https://petsc.org/release/docs/manualpages/Vec/VecAssemblyEnd.html)
+"""
+assemblyend!(::AbstractVec)
+
+@for_libpetsc begin
+    function assemblybegin!(vec::AbstractVec{$PetscScalar, $PetscLib})
         @chk ccall(
             (:VecAssemblyBegin, $petsc_library),
             PetscErrorCode,
             (CVec,),
-            V,
-        )
-        return nothing
-    end
-    function assemblyend(V::AbstractVec{$PetscScalar})
-        @chk ccall(
-            (:VecAssemblyEnd, $petsc_library),
-            PetscErrorCode,
-            (CVec,),
-            V,
+            vec,
         )
         return nothing
     end
 
+    function assemblyend!(vec::AbstractVec{$PetscScalar, $PetscLib})
+        @chk ccall(
+            (:VecAssemblyEnd, $petsc_library),
+            PetscErrorCode,
+            (CVec,),
+            vec,
+        )
+        return nothing
+    end
+end
+
+"""
+    ghostupdatebegin!(
+        vec::AbstractVec,
+        insertmode = INSERT_VALUES,
+        scattermode = SCATTER_FORWARD,
+    )
+
+Begins scattering `vec` to the local or global representations
+
+Manual: [`VecGhostUpdateBegin`](https://petsc.org/release/docs/manualpages/Vec/VecGhostUpdateBegin.html)
+"""
+ghostupdatebegin!(::AbstractVec)
+
+"""
+    ghostupdateend!(
+        vec::AbstractVec,
+        insertmode = INSERT_VALUES,
+        scattermode = SCATTER_FORWARD,
+    )
+
+Finishes scattering `vec` to the local or global representations
+
+Manual: [`VecGhostUpdateEnd`](https://petsc.org/release/docs/manualpages/Vec/VecGhostUpdateEnd.html)
+"""
+ghostupdateend!(::AbstractVec)
+
+@for_libpetsc begin
+    function ghostupdatebegin!(
+        vec::AbstractVec{$PetscScalar, $PetscLib},
+        insertmode = INSERT_VALUES,
+        scattermode = SCATTER_FORWARD,
+    )
+        @chk ccall(
+            (:VecGhostUpdateBegin, $petsc_library),
+            PetscErrorCode,
+            (CVec, InsertMode, ScatterMode),
+            vec,
+            insertmode,
+            scattermode,
+        )
+        return nothing
+    end
+
+    function ghostupdateend!(
+        vec::AbstractVec{$PetscScalar, $PetscLib},
+        insertmode = INSERT_VALUES,
+        scattermode = SCATTER_FORWARD,
+    )
+        @chk ccall(
+            (:VecGhostUpdateEnd, $petsc_library),
+            PetscErrorCode,
+            (CVec, InsertMode, ScatterMode),
+            vec,
+            insertmode,
+            scattermode,
+        )
+        return nothing
+    end
+end
+
+#=
     function unsafe_localarray(
         ::Type{$PetscScalar},
         cv::CVec;
