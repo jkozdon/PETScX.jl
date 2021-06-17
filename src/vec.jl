@@ -1,7 +1,3 @@
-# AbstractVec
-#   - VecGhost (TODO)
-# for the MPI variants we won't be able to attach finalizers, as destroy needs
-# to be called collectively.
 using LinearAlgebra
 
 const CVec = Ptr{Cvoid}
