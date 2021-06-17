@@ -5,6 +5,7 @@
 using LinearAlgebra
 
 const CVec = Ptr{Cvoid}
+const CVecType = Cstring
 
 """
     AbstractVec{PetscLib <: PetscLibType}
@@ -82,6 +83,27 @@ destroy(::AbstractVec)
         # do not artificially decrease the internal petsc ref counter
         petsc_v.__ptr__ = C_NULL
         return nothing
+    end
+end
+
+"""
+   getpetsctype(vec::AbstractVec)
+
+Return a string with the PETSc name of the `vec` type.
+"""
+getpetsctype(::AbstractVec)
+
+@for_libpetsc begin
+    function getpetsctype(vec::AbstractVec{$PetscScalar, $PetscLib})
+        name_r = Ref{CVecType}()
+        @chk ccall(
+            (:VecGetType, $petsc_library),
+            PetscErrorCode,
+            (CVec, Ptr{CVecType}),
+            vec,
+            name_r,
+        )
+        return unsafe_string(name_r[])
     end
 end
 
@@ -536,7 +558,7 @@ end
 =#
 
 """
-    LocalVec(vec::AbstractVec)
+    getlocalform(vec::AbstractVec)
 
 Obtains the local ghosted representation of a [`Vec`](@ref).
 
@@ -545,7 +567,7 @@ Obtains the local ghosted representation of a [`Vec`](@ref).
 
 Manual: [`VecGhostGetLocalForm`](https://petsc.org/release/docs/manualpages/Vec/VecGhostGetLocalForm.html)
 """
-LocalVec
+getlocalform
 
 """
     restorelocalform!(local_vec::LocalVec)
@@ -570,6 +592,18 @@ mutable struct LocalVec{
     end
 end
 
+struct PETScX_NoLocalForm <: Exception
+    vec::AbstractVec
+end
+function Base.showerror(io::IO, e::PETScX_NoLocalForm)
+    print(
+        io,
+        "current state of vector of type \"",
+        typeof(e.vec),
+        "\" does not support local form",
+    )
+end
+
 @for_libpetsc begin
     function getlocalform(gvec::AbstractVec{$PetscScalar, $PetscLib})
         lvec = LocalVec{$PetscLib}(gvec)
@@ -580,6 +614,7 @@ end
             gvec,
             lvec,
         )
+        lvec.__ptr__ == C_NULL && throw(PETScX_NoLocalForm(gvec))
         return lvec
     end
 
@@ -594,6 +629,27 @@ end
         lvec.__ptr__ = C_NULL
         return lvec.__global_vec__
     end
+end
+
+"""
+    withlocalform(f::Function, vec::AbstractVec)
+
+Convert `vec` to a `LocalVec` and apply the function `f!`.
+
+```julia-repl
+julia> withlocalform(vec) do l_vec
+   # Do something with l_vec
+end
+```
+
+!!! note
+    This wrapper handles the calling of [`restorelocalform!`](@ref) before
+    returning.
+"""
+function withlocalform(f!, vec::AbstractVec)
+    lvec = getlocalform(vec)
+    f!(lvec)
+    restorelocalform!(lvec)
 end
 
 # `LinearAlgebra` pirated functions for AbstractVec

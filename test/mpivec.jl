@@ -55,6 +55,9 @@ MPI.Initialized() || MPI.Init()
             vec_norm = norm(petsc_x)
             @test exact_norm ≈ vec_norm
 
+            # We cannot get a local form for this type
+            @test_throws PETScX.PETScX_NoLocalForm PETScX.getlocalform(petsc_x)
+
             PETScX.destroy(petsc_x)
 
             PETScX.Finalize(petsclib)
@@ -134,6 +137,10 @@ end
             end
 
             PETScX.restorelocalform!(l_x)
+
+            PETScX.withlocalform(petsc_x) do l_vec
+                @test length(l_vec) == local_length + length(ghost)
+            end
 
             PETScX.destroy(petsc_x)
 
