@@ -610,7 +610,10 @@ end
             gvec,
             lvec,
         )
-        lvec.__ptr__ == C_NULL && throw(PETScX_NoLocalForm(gvec))
+        if lvec.__ptr__ == C_NULL
+            restorelocalform!(lvec)
+            throw(PETScX_NoLocalForm(gvec))
+        end
         return lvec
     end
 
@@ -822,108 +825,34 @@ ghostupdateend!(::AbstractVec)
     end
 end
 
-#=
-    function unsafe_localarray(
-        ::Type{$PetscScalar},
-        cv::CVec;
-        read::Bool = true,
-        write::Bool = true,
-    )
-        r_pv = Ref{Ptr{$PetscScalar}}()
-        if write
-            if read
-                @chk ccall(
-                    (:VecGetArray, $petsc_library),
-                    PetscErrorCode,
-                    (CVec, Ptr{Ptr{$PetscScalar}}),
-                    cv,
-                    r_pv,
-                )
-            else
-                @chk ccall(
-                    (:VecGetArrayWrite, $petsc_library),
-                    PetscErrorCode,
-                    (CVec, Ptr{Ptr{$PetscScalar}}),
-                    cv,
-                    r_pv,
-                )
-            end
-        else
-            @chk ccall(
-                (:VecGetArrayRead, $petsc_library),
-                PetscErrorCode,
-                (CVec, Ptr{Ptr{$PetscScalar}}),
-                cv,
-                r_pv,
-            )
-        end
-        r_sz = Ref{$PetscInt}()
-        @chk ccall(
-            (:VecGetLocalSize, $petsc_library),
-            PetscErrorCode,
-            (CVec, Ptr{$PetscInt}),
-            cv,
-            r_sz,
-        )
-        v = unsafe_wrap(Array, r_pv[], r_sz[]; own = false)
-
-        if write
-            if read
-                finalizer(v) do v
-                    @chk ccall(
-                        (:VecRestoreArray, $petsc_library),
-                        PetscErrorCode,
-                        (CVec, Ptr{Ptr{$PetscScalar}}),
-                        cv,
-                        Ref(pointer(v)),
-                    )
-                    return nothing
-                end
-            else
-                finalizer(v) do v
-                    @chk ccall(
-                        (:VecRestoreArrayWrite, $petsc_library),
-                        PetscErrorCode,
-                        (CVec, Ptr{Ptr{$PetscScalar}}),
-                        cv,
-                        Ref(pointer(v)),
-                    )
-                    return nothing
-                end
-            end
-        else
-            finalizer(v) do v
-                @chk ccall(
-                    (:VecRestoreArrayRead, $petsc_library),
-                    PetscErrorCode,
-                    (CVec, Ptr{Ptr{$PetscScalar}}),
-                    cv,
-                    Ref(pointer(v)),
-                )
-                return nothing
-            end
-        end
-        return v
-    end
-
 """
-    unsafe_localarray(PetscScalar, ptr:CVec; read=true, write=true)
-    unsafe_localarray(ptr:AbstractVec; read=true, write=true)
+    unsafe_localarray(vec:AbstractVec{PetscScalar}; read=true, write=true)
 
-Return an `Array{PetscScalar}` containing local portion of the PETSc data.
+Return an `Array{PetscScalar}` containing local portion of the PETSc `vec`
 
 Use `read=false` if the array is write-only; `write=false` if read-only.
 
 !!! note
     `Base.finalize` should be called on the `Array` before the data can be used.
-"""
-unsafe_localarray
 
-unsafe_localarray(v::AbstractVec{T}; kwargs...) where {T} =
-    unsafe_localarray(T, v.ptr; kwargs...)
+Manual: [`VecGetArray`](https://petsc.org/release/docs/manualpages/Vec/VecGetArray.html)
+Manual: [`VecRestoreArray`](https://petsc.org/release/docs/manualpages/Vec/VecRestoreArray.html)
+
+Manual: [`VecGetArrayWrite`](https://petsc.org/release/docs/manualpages/Vec/VecGetArrayWrite.html)
+Manual: [`VecRestoreArrayWrite`](https://petsc.org/release/docs/manualpages/Vec/VecRestoreArrayWrite.html)
+
+Manual: [`VecGetArrayRead`](https://petsc.org/release/docs/manualpages/Vec/VecGetArrayRead.html)
+Manual: [`VecRestoreArrayRead`](https://petsc.org/release/docs/manualpages/Vec/VecRestoreArrayRead.html)
+"""
+unsafe_localarray(::AbstractVec)
 
 """
-    map_unsafe_localarray!(f!, x::AbstractVec{T}; read=true, write=true)
+    with_unsafe_localarray!(
+        f!,
+        x::AbstractVec{PetscScalar};
+        read=true,
+        write=true,
+    )
 
 Convert `x` to an `Array{T}` and apply the function `f!`.
 
@@ -936,11 +865,94 @@ julia> map_unsafe_localarray(x; write=true) do x
 end
 
 !!! note
-    `Base.finalize` should is automatically called on the array.
+    `Base.finalize` is automatically called on the array.
 """
-function map_unsafe_localarray!(f!, v::AbstractVec{T}; kwargs...) where {T}
-    array = unsafe_localarray(T, v.ptr; kwargs...)
+function with_unsafe_localarray!(f!, v::AbstractVec; kwargs...)
+    array = unsafe_localarray(v; kwargs...)
     f!(array)
     Base.finalize(array)
 end
-=#
+
+@for_libpetsc begin
+    function unsafe_localarray(
+        vec::AbstractVec{$PetscScalar, $PetscLib};
+        read::Bool = true,
+        write::Bool = true,
+    )
+        r_pv = Ref{Ptr{$PetscScalar}}()
+        if write
+            if read
+                @chk ccall(
+                    (:VecGetArray, $petsc_library),
+                    PetscErrorCode,
+                    (CVec, Ptr{Ptr{$PetscScalar}}),
+                    vec,
+                    r_pv,
+                )
+            else
+                @chk ccall(
+                    (:VecGetArrayWrite, $petsc_library),
+                    PetscErrorCode,
+                    (CVec, Ptr{Ptr{$PetscScalar}}),
+                    vec,
+                    r_pv,
+                )
+            end
+        else
+            @chk ccall(
+                (:VecGetArrayRead, $petsc_library),
+                PetscErrorCode,
+                (CVec, Ptr{Ptr{$PetscScalar}}),
+                vec,
+                r_pv,
+            )
+        end
+        r_sz = Ref{$PetscInt}()
+        @chk ccall(
+            (:VecGetLocalSize, $petsc_library),
+            PetscErrorCode,
+            (CVec, Ptr{$PetscInt}),
+            vec,
+            r_sz,
+        )
+        v = unsafe_wrap(Array, r_pv[], r_sz[]; own = false)
+
+        if write
+            if read
+                finalizer(v) do v
+                    @chk ccall(
+                        (:VecRestoreArray, $petsc_library),
+                        PetscErrorCode,
+                        (CVec, Ptr{Ptr{$PetscScalar}}),
+                        vec,
+                        Ref(pointer(v)),
+                    )
+                    return nothing
+                end
+            else
+                finalizer(v) do v
+                    @chk ccall(
+                        (:VecRestoreArrayWrite, $petsc_library),
+                        PetscErrorCode,
+                        (CVec, Ptr{Ptr{$PetscScalar}}),
+                        vec,
+                        Ref(pointer(v)),
+                    )
+                    return nothing
+                end
+            end
+        else
+            finalizer(v) do v
+                @chk ccall(
+                    (:VecRestoreArrayRead, $petsc_library),
+                    PetscErrorCode,
+                    (CVec, Ptr{Ptr{$PetscScalar}}),
+                    vec,
+                    Ref(pointer(v)),
+                )
+                return nothing
+            end
+        end
+        return v
+    end
+end

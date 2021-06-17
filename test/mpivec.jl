@@ -33,9 +33,9 @@ MPI.Initialized() || MPI.Init()
             elseif test_version == 2 # Test creation from local size
                 petsc_x = PETScX.Vec(petsclib, comm, n1 - n0 + 1)
 
-                vals = PetscScalar.(n0:n1)
+                julia_x = PetscScalar.(n0:n1)
                 inds = PetscInt.(n0:n1)
-                PETScX.setvalues!(petsc_x, inds, vals, PETScX.INSERT_VALUES)
+                PETScX.setvalues!(petsc_x, inds, julia_x, PETScX.INSERT_VALUES)
 
             else # Test creation from global size
                 petsc_x = PETScX.Vec(
@@ -46,9 +46,12 @@ MPI.Initialized() || MPI.Init()
                 )
 
                 inds = PetscInt.(PETScX.ownershiprange(petsc_x))
-                vals = PetscScalar.(inds)
-                PETScX.setvalues!(petsc_x, inds, vals, PETScX.INSERT_VALUES)
+                julia_x = PetscScalar.(inds)
+                PETScX.setvalues!(petsc_x, inds, julia_x, PETScX.INSERT_VALUES)
             end
+
+            PETScX.assemblybegin!(petsc_x)
+            PETScX.assemblyend!(petsc_x)
 
             @test length(petsc_x) == exact_length
 
@@ -57,6 +60,10 @@ MPI.Initialized() || MPI.Init()
 
             # We cannot get a local form for this type
             @test_throws PETScX.PETScX_NoLocalForm PETScX.getlocalform(petsc_x)
+
+            PETScX.with_unsafe_localarray!(petsc_x) do array
+                @test array == julia_x
+            end
 
             PETScX.destroy(petsc_x)
 
@@ -99,15 +106,17 @@ end
 
             # Test creation with array
             if with_array
-                julia_x = zeros(PetscScalar, local_length + length(ghost))
-                julia_x[1:local_length] = n0:n1
-                petsc_x = PETScX.Vec(petsclib, comm, julia_x, ghost)
+                julia_x = PetscScalar.(n0:n1)
+                julia_x_with_ghost =
+                    zeros(PetscScalar, local_length + length(ghost))
+                julia_x_with_ghost[1:local_length] = julia_x
+                petsc_x = PETScX.Vec(petsclib, comm, julia_x_with_ghost, ghost)
             else
                 petsc_x = PETScX.Vec(petsclib, comm, local_length, ghost)
 
                 inds = PetscInt.(PETScX.ownershiprange(petsc_x))
-                vals = PetscScalar.(inds)
-                PETScX.setvalues!(petsc_x, inds, vals, PETScX.INSERT_VALUES)
+                julia_x = PetscScalar.(inds)
+                PETScX.setvalues!(petsc_x, inds, julia_x, PETScX.INSERT_VALUES)
             end
 
             PETScX.assemblybegin!(petsc_x)
@@ -140,6 +149,17 @@ end
 
             PETScX.withlocalform(petsc_x) do l_vec
                 @test length(l_vec) == local_length + length(ghost)
+            end
+
+            PETScX.with_unsafe_localarray!(petsc_x) do array
+                @test array == julia_x
+            end
+
+            PETScX.withlocalform(petsc_x) do l_vec
+                PETScX.with_unsafe_localarray!(l_vec) do array
+                    @test array[1:local_length] == julia_x
+                    @test array[(local_length + 1):end] == ghost
+                end
             end
 
             PETScX.destroy(petsc_x)
