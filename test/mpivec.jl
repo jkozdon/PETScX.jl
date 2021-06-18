@@ -161,6 +161,14 @@ end
                     @test array[(local_length + 1):end] == ghost
                 end
             end
+            PETScX.with_unsafe_localarray!(petsc_x; write = true) do array
+                array[1:local_length] .= 1
+            end
+            PETScX.ghostupdatebegin!(petsc_x)
+            PETScX.ghostupdateend!(petsc_x)
+            PETScX.with_unsafe_localarray!(petsc_x; read = true) do array
+                @test all(array .== 1)
+            end
 
             PETScX.destroy(petsc_x)
 
