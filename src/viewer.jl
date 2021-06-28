@@ -26,38 +26,39 @@ mutable struct ViewerStdout{PetscLib} <: AbstractViewer{PetscLib}
     comm::MPI.Comm
 end
 
-@for_libpetsc begin
-    function ViewerStdout(::$UnionPetscLib, comm::MPI.Comm = MPI.COMM_SELF)
-        ptr = ccall(
-            (:PETSC_VIEWER_STDOUT_, $petsc_library),
-            CPetscViewer,
-            (MPI.MPI_Comm,),
-            comm,
-        )
-        return ViewerStdout{$PetscLib}(ptr, comm)
-    end
-    function Base.push!(
-        viewer::AbstractViewer{$PetscLib},
-        format::PetscViewerFormat,
+@for_libpetsc function ViewerStdout(
+    ::$UnionPetscLib,
+    comm::MPI.Comm = MPI.COMM_SELF,
+)
+    ptr = ccall(
+        (:PETSC_VIEWER_STDOUT_, $petsc_library),
+        CPetscViewer,
+        (MPI.MPI_Comm,),
+        comm,
     )
-        @chk ccall(
-            (:PetscViewerPushFormat, $petsc_library),
-            PetscErrorCode,
-            (CPetscViewer, PetscViewerFormat),
-            viewer,
-            format,
-        )
-        return nothing
-    end
-    function Base.pop!(viewer::AbstractViewer{$PetscLib})
-        @chk ccall(
-            (:PetscViewerPopFormat, $petsc_library),
-            PetscErrorCode,
-            (CPetscViewer,),
-            viewer,
-        )
-        return nothing
-    end
+    return ViewerStdout{$PetscLib}(ptr, comm)
+end
+@for_libpetsc function Base.push!(
+    viewer::AbstractViewer{$PetscLib},
+    format::PetscViewerFormat,
+)
+    @chk ccall(
+        (:PetscViewerPushFormat, $petsc_library),
+        PetscErrorCode,
+        (CPetscViewer, PetscViewerFormat),
+        viewer,
+        format,
+    )
+    return nothing
+end
+@for_libpetsc function Base.pop!(viewer::AbstractViewer{$PetscLib})
+    @chk ccall(
+        (:PetscViewerPopFormat, $petsc_library),
+        PetscErrorCode,
+        (CPetscViewer,),
+        viewer,
+    )
+    return nothing
 end
 
 function with(f, viewer::AbstractViewer, format::PetscViewerFormat)
