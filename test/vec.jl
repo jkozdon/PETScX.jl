@@ -17,6 +17,7 @@ using MPI: mpiexec
         @test norm(petsc_x) == norm(julia_x)
         #XXX: For some reason non-l2 is broken...
         # @test norm(petsc_x, PETScX.NORM_INFINITY) == norm(julia_x, Inf)
+        display(petsc_x)
 
         # Check the view
         _stdout = stdout

@@ -391,7 +391,7 @@ Manual: [`VecGetOwnershipRange`](https://petsc.org/release/docs/manualpages/Vec/
 !!! note
     The range returned is inclusive (`idx_first:idx_last`)
 """
-ownershiprange
+ownershiprange(::AbstractVec)
 
 @for_libpetsc function ownershiprange(vec::AbstractVec{$PetscScalar})
     r_lo = Ref{$PetscInt}()
