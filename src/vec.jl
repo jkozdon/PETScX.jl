@@ -339,7 +339,7 @@ Manual: [`VecCreateGhostWithArray`](https://petsc.org/release/docs/manualpages/V
     this cannot be handled by the garbage collector do to the MPI nature of the
     object.
 """
-Vec(_, ::MPI.Comm, ::Integer, ::Vector)
+Vec(_, ::MPI.Comm, ::Vector, ::Vector)
 
 @for_libpetsc function Vec(
     ::$UnionPetscLib,
