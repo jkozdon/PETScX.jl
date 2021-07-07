@@ -1,61 +1,76 @@
+"""
+    PetscLibType{PetscScalar, PetscInt}(petsc_library)
 
-using Libdl
+A container for specific PETSc libraries.
 
-function getlibs()
-    libs = ()
-    petsc_libs = ENV["JULIA_PETSC_LIBRARY"]
+All other containers for PETSc objects should be typed on this to ensure that
+dispatch is correct.
+"""
+struct PetscLibType{PetscScalar, PetscInt, LibType}
+    petsc_library::LibType
+end
+function PetscLibType{ST, IT}(petsc_library) where {ST, IT}
+    LT = typeof(petsc_library)
+    return PetscLibType{ST, IT, LT}(petsc_library)
+end
 
-    flags = Libdl.RTLD_LAZY | Libdl.RTLD_DEEPBIND | Libdl.RTLD_GLOBAL
+"""
+    scalartype(petsclib::PetscLibType)
 
-    for petsc_lib in Base.parse_load_path(petsc_libs)
-        libs = (libs..., (petsc_lib, flags))
+return the scalar type for the associated `petsclib`
+"""
+scalartype(::PetscLibType{ST}) where {ST} = ST
+scalartype(::Type{PetscLib}) where {PetscLib <: PetscLibType{ST}} where {ST} =
+    ST
+
+"""
+    realtype(petsclib::PetscLibType)
+
+return the real type for the associated `petsclib`
+"""
+realtype(::PetscLibType{ST}) where {ST} = real(ST)
+realtype(::Type{PetscLib}) where {PetscLib <: PetscLibType{ST}} where {ST} =
+    real(ST)
+
+"""
+    inttype(petsclib::PetscLibType)
+
+return the int type for the associated `petsclib`
+"""
+inttype(::PetscLibType{ST, IT}) where {ST, IT} = IT
+inttype(
+    ::Type{PetscLib},
+) where {PetscLib <: PetscLibType{ST, IT}} where {ST, IT} = IT
+
+"""
+    getpetsclib([PetscScalar = Float64, PetscInt = Int64])
+
+return the [`PETScLibType`](@ref) for the associated parameters.
+"""
+function getpetsclib(PetscScalar = Float64, PetscInt = Int64)
+    try
+        _getpetsclib(PetscScalar, PetscInt)
+    catch
+        error(
+            "No PETSc library loaded for types " *
+            "(PetscScalar, PetscInt) = ($PetscScalar, $PetscInt)",
+        )
     end
-    return libs
 end
 
-const libs = @static if !haskey(ENV, "JULIA_PETSC_LIBRARY")
-    using PETSc_jll
-    ((PETSc_jll.libpetsc,),)
-else
-    getlibs()
-end
+"""
+    petsclibs
 
-function initialize(libhdl::Ptr{Cvoid})
-    PetscInitializeNoArguments_ptr = dlsym(libhdl, :PetscInitializeNoArguments)
-    @chk ccall(PetscInitializeNoArguments_ptr, PetscErrorCode, ())
-end
-
-function DataTypeFromString(libhdl::Ptr{Cvoid}, name::AbstractString)
-    PetscDataTypeFromString_ptr = dlsym(libhdl, :PetscDataTypeFromString)
-    dtype_ref = Ref{PetscDataType}()
-    found_ref = Ref{PetscBool}()
-    @chk ccall(
-        PetscDataTypeFromString_ptr,
-        PetscErrorCode,
-        (Cstring, Ptr{PetscDataType}, Ptr{PetscBool}),
-        name,
-        dtype_ref,
-        found_ref,
-    )
-    @assert found_ref[] == PETSC_TRUE
-    return dtype_ref[]
-end
-function PetscDataTypeGetSize(libhdl::Ptr{Cvoid}, dtype::PetscDataType)
-    PetscDataTypeGetSize_ptr = dlsym(libhdl, :PetscDataTypeGetSize)
-    datasize_ref = Ref{Csize_t}()
-    @chk ccall(
-        PetscDataTypeGetSize_ptr,
-        PetscErrorCode,
-        (PetscDataType, Ptr{Csize_t}),
-        dtype,
-        datasize_ref,
-    )
-    return datasize_ref[]
-end
-
-const libtypes = map(libs) do lib
+A `Tuple` of the available PETSc library objects; see [`PetscLibType`](@ref)
+"""
+const petsclibs = map(libs) do lib
     libhdl = dlopen(lib...)
-    initialize(libhdl)
+
+    # initialize petsc
+    PetscInitializeNoArguments_ptr =
+        dlsym(libhdl, :PetscInitializeNoArguments)
+    @chk ccall(PetscInitializeNoArguments_ptr, PetscErrorCode, ())
+
     PETSC_REAL = DataTypeFromString(libhdl, "Real")
     PETSC_SCALAR = DataTypeFromString(libhdl, "Scalar")
     PETSC_INT_SIZE = PetscDataTypeGetSize(libhdl, PETSC_INT)
@@ -75,19 +90,37 @@ const libtypes = map(libs) do lib
         PETSC_INT_SIZE == 8 ? Int64 :
         error("PETSC_INT_SIZE = $PETSC_INT_SIZE not supported.")
 
+    PetscFinalize_ptr = dlsym(libhdl, :PetscFinalize)
+    @chk ccall(PetscFinalize_ptr, PetscErrorCode, ())
+
     # TODO: PetscBLASInt, PetscMPIInt ?
-    return (lib[1], PetscScalar, PetscReal, PetscInt)
+    return PetscLibType{PetscScalar, PetscInt}(lib[1])
 end
 
-const scalar_types = map(x -> x[2], libtypes)
-@assert length(scalar_types) == length(unique(scalar_types))
+"""
+    @for_libpetsc
 
+Macro for looping over the available petsc libraries.
+"""
 macro for_libpetsc(expr)
     quote
-        for (libpetsc, PetscScalar, PetscReal, PetscInt) in libtypes
+        for petsclib in petsclibs
+            # String for the library
+            petsc_library = petsclib.petsc_library
+
+            # types we dispatch on
+            PetscLib = typeof(petsclib)
+            UnionPetscLib = Union{PetscLib, Type{PetscLib}}
+
+            PetscScalar = scalartype(petsclib)
+            PetscReal = realtype(petsclib)
+            PetscInt = inttype(petsclib)
+
             @eval esc($expr)
         end
     end
 end
 
-@for_libpetsc inttype(::Type{$PetscScalar}) = $PetscInt
+@for_libpetsc begin
+    _getpetsclib(::Type{$PetscScalar}, ::Type{$PetscInt}) = $petsclib
+end

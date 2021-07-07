@@ -49,6 +49,7 @@ const PetscLogDouble = Cdouble
     NORM_INFINITY = 3
     NORM_1_AND_2 = 4
 end
+const NORM_MAX = NORM_INFINITY
 
 @enum MatAssemblyType MAT_FLUSH_ASSEMBLY = 1 MAT_FINAL_ASSEMBLY = 0
 
@@ -60,6 +61,14 @@ end
     MAT_FACTOR_ICC = 4
     MAT_FACTOR_ILUDT = 5
 end
+
+@enum ScatterMode begin
+    SCATTER_FORWARD = 0
+    SCATTER_REVERSE = 1
+    SCATTER_FORWARD_LOCAL = 2
+    SCATTER_REVERSE_LOCAL = 3
+end
+const SCATTER_LOCAL = SCATTER_FORWARD_LOCAL
 
 @enum PetscViewerFormat begin
     PETSC_VIEWER_DEFAULT

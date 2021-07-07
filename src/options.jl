@@ -1,17 +1,64 @@
-
 const CPetscOptions = Ptr{Cvoid}
 
-#TODO: should it be <: AbstractDict{String,String}?
-abstract type AbstractOptions{T} end
+"""
+    AbstractOptions{PetscLib <: PetscLibType}
+
+Abstract type of PETSc solver options.
+"""
+abstract type AbstractOptions{PetscLib <: PetscLibType} end
 
 """
-    GlobalOptions{T}()
+    GlobalOptions{PetscLib <: PetscLibType}
 
 The PETSc global options database.
 """
-struct GlobalOptions{T} <: AbstractOptions{T} end
+struct GlobalOptions{PetscLib} <: AbstractOptions{PetscLib} end
 Base.cconvert(::Type{CPetscOptions}, obj::GlobalOptions) = C_NULL
 
+"""
+    Options{PetscLib <: PetscLibType}(kw -> arg, ...)
+    Options(petsclib, kw -> arg, ...)
+
+Create a PETSc options data structure for the `petsclib`.
+
+For construction a set of keyword argment pairs should be given. If the option
+has no value it should be set to `nothing`
+
+# Examples
+```julia-repl
+julia> opt = PETScX.Options(
+           petsclib,
+           ksp_monitor = true,
+           ksp_view = true,
+           pc_type = "mg",
+           pc_mg_levels = 1,
+       )
+#PETSc Option Table entries:
+-ksp_monitor true
+-ksp_view true
+-pc_mg_levels 1
+-pc_type mg
+#End of PETSc Option Table entries
+
+
+julia> opt["ksp_monitor"]
+"true"
+
+julia> opt["pc_type"]
+"mg"
+
+julia> opt["pc_type"] = "ilu"
+"ilu"
+
+julia> opt["pc_type"]
+"ilu"
+
+julia> opt["bad_key"]
+ERROR: KeyError: key "bad_key" not found
+```
+
+Manual: [`PetscOptionsCreate`](https://petsc.org/release/docs/manualpages/Sys/PetscOptionsCreate.html)
+"""
 mutable struct Options{T} <: AbstractOptions{T}
     ptr::CPetscOptions
 end
@@ -19,94 +66,113 @@ Base.cconvert(::Type{CPetscOptions}, obj::Options) = obj.ptr
 Base.unsafe_convert(::Type{Ptr{CPetscOptions}}, obj::Options) =
     convert(Ptr{CPetscOptions}, pointer_from_objref(obj))
 
-scalartype(::Options{T}) where {T} = T
-
-@for_libpetsc begin
-    function Options{$PetscScalar}()
-        initialize($PetscScalar)
-        opts = Options{$PetscScalar}(C_NULL)
-        @chk ccall(
-            (:PetscOptionsCreate, $libpetsc),
-            PetscErrorCode,
-            (Ptr{CPetscOptions},),
-            opts,
-        )
-        finalizer(destroy, opts)
-        return opts
-    end
-    function destroy(opts::Options{$PetscScalar})
-        finalized($PetscScalar) || @chk ccall(
-            (:PetscOptionsDestroy, $libpetsc),
-            PetscErrorCode,
-            (Ptr{CPetscOptions},),
-            opts,
-        )
-        return nothing
-    end
-
-    function Base.push!(
-        ::GlobalOptions{$PetscScalar},
-        opts::Options{$PetscScalar},
-    )
-        @chk ccall(
-            (:PetscOptionsPush, $libpetsc),
-            PetscErrorCode,
-            (CPetscOptions,),
-            opts,
-        )
-        return nothing
-    end
-    function Base.pop!(::GlobalOptions{$PetscScalar})
-        @chk ccall((:PetscOptionsPop, $libpetsc), PetscErrorCode, ())
-        return nothing
-    end
-    function Base.setindex!(opts::AbstractOptions{$PetscScalar}, val, key)
-        @chk ccall(
-            (:PetscOptionsSetValue, $libpetsc),
-            PetscErrorCode,
-            (CPetscOptions, Cstring, Cstring),
-            opts,
-            string('-', key),
-            (val === true || isnothing(val)) ? C_NULL : string(val),
-        )
-    end
-
-    function view(
-        opts::AbstractOptions{$PetscScalar},
-        viewer::Viewer{$PetscScalar} = ViewerStdout{$PetscScalar}(
-            MPI.COMM_SELF,
-        ),
-    )
-        @chk ccall(
-            (:PetscOptionsView, $libpetsc),
-            PetscErrorCode,
-            (CPetscOptions, CPetscViewer),
-            opts,
-            viewer,
-        )
-        return nothing
-    end
-end
-
-"""
-    Options{T}(kw => arg, ...)
-
-Create a new PETSc options database.
-"""
-function Options{T}(ps::Pair...) where {T}
-    opts = Options{T}()
+Options(petsclib; kwargs...) = Options(petsclib, kwargs...)
+function Options(petsclib, ps::Pair...)
+    opts = Options(petsclib)
     for (k, v) in ps
         opts[k] = v
     end
     return opts
 end
 
+@for_libpetsc function Options(::$UnionPetscLib)
+    opts = Options{$PetscLib}(C_NULL)
+    @assert Initialized($PetscLib)
+    @chk ccall(
+        (:PetscOptionsCreate, $petsc_library),
+        PetscErrorCode,
+        (Ptr{CPetscOptions},),
+        opts,
+    )
+    finalizer(Finalize, opts)
+    return opts
+end
+
+@for_libpetsc function Finalize(opts::Options{$PetscLib})
+    Finalized($PetscLib) || @chk ccall(
+        (:PetscOptionsDestroy, $petsc_library),
+        PetscErrorCode,
+        (Ptr{CPetscOptions},),
+        opts,
+    )
+    return nothing
+end
+
+@for_libpetsc function Base.push!(
+    ::GlobalOptions{$PetscLib},
+    opts::Options{$PetscLib},
+)
+    @chk ccall(
+        (:PetscOptionsPush, $petsc_library),
+        PetscErrorCode,
+        (CPetscOptions,),
+        opts,
+    )
+    return nothing
+end
+
+@for_libpetsc function Base.pop!(::GlobalOptions{$PetscLib})
+    @chk ccall((:PetscOptionsPop, $petsc_library), PetscErrorCode, ())
+    return nothing
+end
+
+@for_libpetsc function Base.setindex!(
+    opts::AbstractOptions{$PetscLib},
+    val,
+    key,
+)
+    @chk ccall(
+        (:PetscOptionsSetValue, $petsc_library),
+        PetscErrorCode,
+        (CPetscOptions, Cstring, Cstring),
+        opts,
+        string('-', key),
+        isnothing(val) ? C_NULL : string(val),
+    )
+end
+
+@for_libpetsc function Base.getindex(opts::AbstractOptions{$PetscLib}, key)
+    val = Vector{UInt8}(undef, 256)
+    set_ref = Ref{PetscBool}()
+    @chk ccall(
+        (:PetscOptionsGetString, $petsc_library),
+        PetscErrorCode,
+        (CPetscOptions, Cstring, Cstring, Ptr{UInt8}, Csize_t, Ptr{PetscBool}),
+        opts,
+        C_NULL,
+        string('-', key),
+        val,
+        sizeof(val),
+        set_ref,
+    )
+    val = GC.@preserve val unsafe_string(pointer(val))
+    set_ref[] == PETSC_TRUE || throw(KeyError(key))
+    return val
+end
+
+@for_libpetsc function view(
+    opts::AbstractOptions{$PetscLib},
+    viewer::AbstractViewer{$PetscLib} = ViewerStdout($PetscLib, MPI.COMM_SELF),
+)
+    @chk ccall(
+        (:PetscOptionsView, $petsc_library),
+        PetscErrorCode,
+        (CPetscOptions, CPetscViewer),
+        opts,
+        viewer,
+    )
+    return nothing
+end
+
+@for_libpetsc GlobalOptions(::$UnionPetscLib) = GlobalOptions{$PetscLib}()
+
 Base.show(io::IO, opts::AbstractOptions) = _show(io, opts)
 
 """
     with(f, opts::Options)
 
-Call `f()` with the [`Options`](@ref) `opts` set temporarily (in addition to any global options).
+Call `f()` with the [`Options`](@ref) `opts` set temporarily (in addition to any
+global options).
 """
 function with(f, opts::Options{T}) where {T}
     global_opts = GlobalOptions{T}()
@@ -116,26 +182,4 @@ function with(f, opts::Options{T}) where {T}
     finally
         pop!(global_opts)
     end
-end
-
-"""
-    parse_options(args::Vector{String})
-
-Parse the `args` vector into a `NamedTuple` that can be used as the options for
-the PETSc solvers.
-"""
-function parse_options(args::Vector{String})
-    i = 1
-    opts = Dict{Symbol, Union{String, Nothing}}()
-    while i <= length(args)
-        @assert args[i][1] == '-' && length(args[i]) > 1
-        if i == length(args) || args[i + 1][1] == '-'
-            opts[Symbol(args[i][2:end])] = nothing
-            i = i + 1
-        else
-            opts[Symbol(args[i][2:end])] = args[i + 1]
-            i = i + 2
-        end
-    end
-    return NamedTuple(opts)
 end

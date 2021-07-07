@@ -1,75 +1,77 @@
+"""
+   Initialize(petsclib)
 
-@for_libpetsc begin
-    function initialized(::Type{$PetscScalar})
-        r_flag = Ref{PetscBool}()
-        @chk ccall(
-            (:PetscInitialized, $libpetsc),
-            PetscErrorCode,
-            (Ptr{PetscBool},),
-            r_flag,
-        )
-        return r_flag[] == PETSC_TRUE
-    end
-    function initialize(::Type{$PetscScalar})
-        if !initialized($PetscScalar)
-            MPI.Initialized() || MPI.Init()
-            @chk ccall(
-                (:PetscInitializeNoArguments, $libpetsc),
-                PetscErrorCode,
-                (),
-            )
+Initialize the `petsclib`.
 
-            # disable signal handler
-            @chk ccall((:PetscPopSignalHandler, $libpetsc), PetscErrorCode, ())
-
-            atexit(() -> finalize($PetscScalar))
-        end
-        return nothing
-    end
-    function finalized(::Type{$PetscScalar})
-        r_flag = Ref{PetscBool}()
-        @chk ccall(
-            (:PetscFinalized, $libpetsc),
-            PetscErrorCode,
-            (Ptr{PetscBool},),
-            r_flag,
-        )
-        return r_flag[] == PETSC_TRUE
-    end
-    function finalize(::Type{$PetscScalar})
-        if !finalized($PetscScalar)
-            @chk ccall((:PetscFinalize, $libpetsc), PetscErrorCode, ())
-        end
-        return nothing
-    end
+Manual: [`PetscInitializeNoArguments`](https://petsc.org/release/docs/manualpages/Sys/PetscInitializeNoArguments.html)
+"""
+function Initialized end
+@for_libpetsc function Initialized(::$UnionPetscLib)
+    r_flag = Ref{PetscBool}()
+    @chk ccall(
+        (:PetscInitialized, $petsc_library),
+        PetscErrorCode,
+        (Ptr{PetscBool},),
+        r_flag,
+    )
+    return r_flag[] == PETSC_TRUE
 end
 
 """
-    PETSc.initialize([T])
+   Initialized(petsclib)
 
-Initialize PETSc for scalar type `T`, if not already initialized. If no `T` is
-provided, then it will be initialized for all supported scalar types.
+Check if `petsclib` is initialized
 
-Additionally:
- - This will initialize MPI if it has not already been initialized.
- - It will disable the PETSc signal handler (via
-   [`PetscPopSignalHandler`](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/Sys/PetscPopSignalHandler.html))
- - Add an [`atexit`](https://docs.julialang.org/en/v1/base/base/#Base.atexit)
-   hook to call [`PETSc.finalize`](@ref).
+Manual: [`PetscInitialized`](https://petsc.org/release/docs/manualpages/Sys/PetscInitialized.html)
 """
-function initialize()
-    map(initialize, scalar_types)
+function Initialize end
+@for_libpetsc function Initialize(::$UnionPetscLib)
+    if !Initialized($petsclib)
+        MPI.Initialized() || MPI.Init()
+        @chk ccall(
+            (:PetscInitializeNoArguments, $petsc_library),
+            PetscErrorCode,
+            (),
+        )
+
+        # disable signal handler
+        @chk ccall((:PetscPopSignalHandler, $petsc_library), PetscErrorCode, ())
+
+        atexit(() -> Finalize($PetscLib))
+    end
     return nothing
 end
 
 """
-    PETSc.finalize([T])
+   Finalize(petsclib)
 
-Finalize PETSc for scalar type `T`. If no `T` is provided, then it will be finalized for all supported scalar types.
+Check if `petsclib` is initialized
 
-It is generally not necessary to call this function directly, as it is added as an [`atexit`](https://docs.julialang.org/en/v1/base/base/#Base.atexit) hook in [`PETSc.initialize`](@ref).
+Manual: [`PetscFinalize`](https://petsc.org/release/docs/manualpages/Sys/PetscFinalize.html)
 """
-function finalize()
-    map(finalize, scalar_types)
+function Finalize end
+@for_libpetsc function Finalize(::$UnionPetscLib)
+    if !Finalized($petsclib)
+        @chk ccall((:PetscFinalize, $petsc_library), PetscErrorCode, ())
+    end
     return nothing
+end
+
+"""
+   Finalized(petsclib)
+
+Check if `petsclib` is finalized
+
+Manual: [`PetscFinalized`](https://petsc.org/release/docs/manualpages/Sys/PetscFinalized.html)
+"""
+function Finalized end
+@for_libpetsc function Finalized(::$UnionPetscLib)
+    r_flag = Ref{PetscBool}()
+    @chk ccall(
+        (:PetscFinalized, $petsc_library),
+        PetscErrorCode,
+        (Ptr{PetscBool},),
+        r_flag,
+    )
+    return r_flag[] == PETSC_TRUE
 end
