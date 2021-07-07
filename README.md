@@ -1,3 +1,5 @@
+Repo is being archived and everything is being merged back into [`PETSc.jl`](https://github.com/JuliaParallel/PETSc.jl)
+
 # PETScX
 
 [![Build Status](https://github.com/jkozdon/PETScX.jl/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jkozdon/PETScX.jl/actions/workflows/ci.yml?query=branch%3Amain)
